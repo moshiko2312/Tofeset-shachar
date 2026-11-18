@@ -351,6 +351,8 @@ const demo = (() => {
   const pinErr = (id, pin) => { const p = P(id); if (!p) return 'השחקן לא נמצא'; if (p.pin == null) return 'עוד לא נכנסת בפעם הראשונה. בחר את השם שלך וקוד חדש'; return p.pin === String(pin) ? null : 'קוד שגוי'; };
   const modErr = (id, pin) => { const e = pinErr(id, pin); if (e) return e; const p = P(id); return p.is_manager && !p.blocked ? null : 'אין לך הרשאת מנהל'; };
   const admErr = c => c === db.game.admin ? null : 'קוד מדריך שגוי';
+  const staff = (n, pw) => { const m = (db.managers || []).find(x => x.name.toLowerCase() === norm(n).toLowerCase()); return m && m.pass === String(pw || '') ? m : null; };
+  const staffErr = 'שם המנהל או הסיסמה לא נכונים';
   const addName = n => {
     const name = norm(n);
     if (name.length < 2 || name.length > 30) return err('השם צריך להיות בין 2 ל-30 תווים');
@@ -360,10 +362,11 @@ const demo = (() => {
     return { ok: true, id, name };
   };
   const load = () => {
-    if (db) return;
+    if (db) { db.managers = db.managers || []; return; }
     db = store.get(KEY);
+    if (db) db.managers = db.managers || [];
     if (!db) {
-      db = { game: { status: 'registration', title: 'משחק התופסת', join_code: '', admin: '1234', started_at: null, finished_at: null, winner_id: null }, players: [], catches: [], seq: { p: 0, c: 0 } };
+      db = { game: { status: 'registration', title: 'משחק התופסת', join_code: '', admin: '1234', started_at: null, finished_at: null, winner_id: null }, players: [], catches: [], managers: [], seq: { p: 0, c: 0, m: 0 } };
       ROSTER.forEach(addName);
     }
   };
@@ -490,6 +493,27 @@ const demo = (() => {
       if (db.players.some(p => p.id !== Number(p_player_id) && p.name.toLowerCase() === name.toLowerCase())) return err(`השם "${name}" כבר ברשימה`);
       const p = P(p_player_id); if (p) p.name = name; return { ok: true };
     },
+    tag_staff_login({ p_name, p_pass }) { const m = staff(p_name, p_pass); if (!m) return err(staffErr); m.last_login = now(); return { ok: true, id: m.id, name: m.name }; },
+    tag_staff_state({ p_name, p_pass }) { const m = staff(p_name, p_pass); return m ? { ok: true, me: { id: m.id, name: m.name }, info: info() } : err(staffErr); },
+    tag_staff_block({ p_name, p_pass, p_player_id, p_on }) { const m = staff(p_name, p_pass); if (!m) return err(staffErr); setBlocked(p_player_id, p_on, m.name); return { ok: true }; },
+    tag_staff_release({ p_name, p_pass, p_player_id }) { const m = staff(p_name, p_pass); if (!m) return err(staffErr); release(p_player_id); return { ok: true }; },
+    tag_staff_clear_avatar({ p_name, p_pass, p_player_id }) { const m = staff(p_name, p_pass); if (!m) return err(staffErr); clearAv(p_player_id); return { ok: true }; },
+    tag_admin_add_manager({ p_code, p_name, p_pass }) {
+      const e = admErr(p_code); if (e) return err(e);
+      const name = norm(p_name);
+      if (name.length < 2 || name.length > 30) return err('השם צריך להיות בין 2 ל-30 תווים');
+      if (String(p_pass || '').length < 4) return err('הסיסמה צריכה להיות לפחות 4 תווים');
+      if (db.managers.some(m => m.name.toLowerCase() === name.toLowerCase())) return err('כבר יש מנהל בשם הזה');
+      db.seq.m = (db.seq.m || 0) + 1;
+      db.managers.push({ id: db.seq.m, name, pass: String(p_pass), last_login: null, created_at: now() });
+      return { ok: true, id: db.seq.m, name };
+    },
+    tag_admin_manager_pass({ p_code, p_manager_id, p_pass }) {
+      const e = admErr(p_code); if (e) return err(e);
+      if (String(p_pass || '').length < 4) return err('הסיסמה צריכה להיות לפחות 4 תווים');
+      const m = db.managers.find(x => x.id === Number(p_manager_id)); if (m) m.pass = String(p_pass); return { ok: true };
+    },
+    tag_admin_remove_manager({ p_code, p_manager_id }) { const e = admErr(p_code); if (e) return err(e); db.managers = db.managers.filter(m => m.id !== Number(p_manager_id)); return { ok: true }; },
     tag_mod_state({ p_id, p_pin }) { const e = modErr(p_id, p_pin); return e ? err(e) : { ok: true, info: info() }; },
     tag_mod_block({ p_id, p_pin, p_player_id, p_on }) {
       const e = modErr(p_id, p_pin); if (e) return err(e);
@@ -506,6 +530,7 @@ const demo = (() => {
     tag_admin_state({ p_code }) {
       const e = admErr(p_code); if (e) return err(e);
       return { ok: true, join_code: db.game.join_code || null, info: info(),
+        managers: db.managers.map(m => ({ id: m.id, name: m.name, last_login: m.last_login, created_at: m.created_at, locked: false })),
         catches: [...db.catches].sort((a, b) => b.id - a.id).map(c => ({ id: c.id, catcher_id: c.catcher_id, target_id: c.target_id, catcher: P(c.catcher_id)?.name, target: P(c.target_id)?.name, status: c.status, reason: c.reject_reason, resolved_by: c.resolved_by, created_at: c.created_at, resolved_at: c.resolved_at, has_photo: !!c.photo })) };
     },
     tag_admin_photo({ p_code, p_catch_id }) { const e = admErr(p_code); if (e) return err(e); return { ok: true, photo: db.catches.find(c => c.id === Number(p_catch_id))?.photo || null }; },
@@ -593,6 +618,7 @@ const S = {
   session: store.get('tofeset.session'),
   adminCode: sstore.get('tofeset.admin'),
   adminData: null,
+  staff: store.get('tofeset.staff'),
   modData: null,
   loginId: '',
   loginQ: '',
@@ -605,7 +631,7 @@ const S = {
   if (q) store.set('tofeset.join', q);
 }
 const joinCode = () => store.get('tofeset.join') || null;
-const isManager = () => !!(S.me && S.me.me && S.me.me.is_manager && !S.me.me.blocked);
+const isManager = () => !!S.staff;
 
 /* profile photos: cached in this browser, fetched again only when a kid changes theirs */
 const AV = store.get('tofeset.av', {}) || {};
@@ -650,7 +676,7 @@ async function refresh() {
       if (!me.network && /קוד שגוי|לא נמצא|עוד לא נכנסת/.test(me.error)) { logout(); toast('צריך להיכנס מחדש', 'err'); }
     } else S.me = me;
   }
-  if (S.tab === 'mod' && isManager()) await refreshMod();
+  if (S.tab === 'mod' && S.staff) await refreshMod();
   await syncAvatars();
   render();
 }
@@ -661,8 +687,16 @@ async function refreshAdmin() {
   if (a.join_code && a.join_code !== joinCode()) store.set('tofeset.join', a.join_code);
 }
 async function refreshMod() {
-  const m = await rpc('tag_mod_state', { p_id: S.session.id, p_pin: S.session.pin });
-  if (!m.error) S.modData = m;
+  if (!S.staff) return;
+  const m = await rpc('tag_staff_state', { p_name: S.staff.name, p_pass: S.staff.pass });
+  if (m.error) { if (!m.network) { staffLogout(); toast(m.error, 'err'); } return; }
+  S.modData = m;
+}
+function staffLogout() { S.staff = null; S.modData = null; store.set('tofeset.staff', null); }
+function genPass() {
+  const abc = 'abcdefghjkmnpqrstuvwxyz23456789'; const a = new Uint32Array(6);
+  (window.crypto || {}).getRandomValues ? crypto.getRandomValues(a) : a.forEach((_, i) => a[i] = Math.random() * 1e9);
+  return [...a].map(n => abc[n % abc.length]).join('');
 }
 function logout() { S.session = null; S.me = null; S.modData = null; store.set('tofeset.session', null); }
 
@@ -699,7 +733,7 @@ function render() {
   setHTML($('#view'), html);
   const tabs = [['me', '🎯', 'המשחק שלי'], ['chain', '🔗', 'השרשרת'], ['rules', '📜', 'חוקים']];
   if (isManager() || S.tab === 'mod') tabs.push(['mod', '🛡️', 'ניהול']);
-  if (S.tab === 'admin') tabs.push(['admin', '👑', 'מדריך']);
+  if (S.tab === 'admin') tabs.push(['admin', '👑', 'מנהל ראשי']);
   setHTML($('#tabs'), tabs.map(([k, i, l]) => `<a href="#${k}" class="${S.tab === k ? 'on' : ''}"><span class="i">${i}</span>${l}</a>`).join(''));
 }
 
@@ -720,7 +754,7 @@ function lockedView() {
       <p class="muted">כדי להיכנס צריך את הקישור מהמדריך, או את קוד הגישה.</p></section>
     <section class="card"><form data-form="access" autocomplete="off"><label>קוד גישה<input id="x-code" autocomplete="off"></label>
       <button class="btn gold xl" type="submit">המשך</button></form></section>
-    <div class="foot"><a class="link" href="#admin">כניסת מדריכים</a></div>`;
+    <div class="foot"><a class="link" href="#mod">כניסת מנהלים</a> · <a class="link" href="#admin">מנהל ראשי</a></div>`;
 }
 
 function winnerCard() {
@@ -740,10 +774,10 @@ function meView() {
   const me = m.me;
   const idx = ps.findIndex(p => p.id === me.id);
   const hunter = ps.find(p => p.alive && p.target_id === me.id);
-  let h = `<div class="hello"><button class="me-av" data-act="profile">${av(me)}<span>היי, <b>${esc(me.name)}</b>${me.is_manager ? ' <span class="tag">⭐ מנהל</span>' : ''}</span></button><button class="link" data-act="profile">✏️ הפרופיל שלי</button></div>`;
+  let h = `<div class="hello"><button class="me-av" data-act="profile">${av(me)}<span>היי, <b>${esc(me.name)}</b></span></button><button class="link" data-act="profile">✏️ הפרופיל שלי</button></div>`;
   if (me.blocked) {
     return h + `<section class="card out"><div class="big-emoji">🚫</div><h2>החשבון שלך חסום</h2>
-      <p class="muted">${me.is_manager ? 'המדריך' : 'אחד המנהלים'} חסם את החשבון. אם זו טעות, פנה למדריך.</p></section>`;
+      <p class="muted">אחד המנהלים חסם את החשבון. אם זו טעות, פנה למדריך.</p></section>`;
   }
   if (m.incoming) h += incomingCard(m.incoming);
   if (g.status === 'finished') h += winnerCard();
@@ -836,7 +870,7 @@ function authView() {
       <h1 class="gold-text">${esc(g.title)}</h1><p class="muted">${sub}</p></section>
     ${g.status === 'finished' ? winnerCard() : ''}
     <section class="card">${names.length ? form : '<p class="empty">הרשימה עוד ריקה</p>'}</section>
-    <div class="foot"><a class="link" href="#admin">כניסת מדריכים</a></div>`;
+    <div class="foot"><a class="link" href="#mod">כניסת מנהלים</a> · <a class="link" href="#admin">מנהל ראשי</a></div>`;
 }
 
 function chainView() {
@@ -900,19 +934,23 @@ function peopleList(kind) {
     if (p.inf.locked) bits.push('🔒 ננעל');
     if (p.inf.blocked && p.inf.blocked_by) bits.push('נחסם ע״י ' + esc(p.inf.blocked_by));
     return `<li class="arow">${numCircle(p, p.n)}
-      <div class="who"><div class="nm">${esc(p.name)}${p.inf.is_manager ? '<span class="tag">⭐ מנהל</span>' : ''}${p.inf.blocked ? '<span class="tag red">🚫 חסום</span>' : ''}</div>
+      <div class="who"><div class="nm">${esc(p.name)}${p.inf.blocked ? '<span class="tag red">🚫 חסום</span>' : ''}</div>
       <div class="sub">${bits.join(' · ')}</div></div>
       <div class="acts"><button data-act="person" data-kind="${kind}" data-id="${p.id}">פעולות</button></div></li>`;
   }).join('')}</ul>`;
 }
 
 function modView() {
-  if (!isManager()) return `<section class="card center"><h2>אין הרשאת מנהל</h2><p class="muted">רק מי שהמדריך הגדיר כמנהל רואה את המסך הזה.</p></section>`;
+  if (!S.staff) return `<section class="card"><h2>🛡️ כניסת מנהלים</h2>
+      <p class="muted small">את השם והסיסמה מקבלים מהמנהל הראשי.</p>
+      <form data-form="staff-login" autocomplete="off"><label>שם המנהל<input id="st-name" maxlength="30" autocomplete="username"></label>
+      <label>סיסמה<input id="st-pass" type="password" dir="ltr" autocomplete="current-password"></label>
+      <button class="btn gold xl" type="submit">כניסה</button></form></section>`;
   if (!S.modData) return '<div class="skeleton"></div>';
   const info = S.modData.info || [];
   const blocked = info.filter(i => i.blocked).length;
-  return `<div class="hello"><div>🛡️ <b>ניהול</b></div></div>
-    <section class="card"><p class="muted small">אפשר לחסום מי שעושה ספאם (למשל שולח תמונות לא אמיתיות), ולשחרר שם שמישהו אחר נכנס איתו. ילד ששחררו לו את השם נכנס שוב ובוחר קוד חדש.</p>
+  return `<div class="hello"><div>🛡️ <b>ניהול</b> · ${esc(S.staff.name)}</div><button class="link" data-act="staff-logout">יציאה</button></div>
+    <section class="card"><p class="muted small">אפשר לחסום מי שעושה ספאם (למשל שולח תמונות לא אמיתיות), לשחרר שם שמישהו אחר נכנס איתו, ולמחוק תמונת פרופיל לא מתאימה. ילד ששחררו לו את השם נכנס שוב ובוחר קוד חדש.</p>
       <div class="stats-row" style="margin:10px 0 0"><div class="stat"><div class="n">${info.filter(i => i.claimed).length}</div><div class="l">נכנסו</div></div>
       <div class="stat"><div class="n">${info.length - info.filter(i => i.claimed).length}</div><div class="l">עוד לא נכנסו</div></div>
       <div class="stat"><div class="n">${blocked}</div><div class="l">חסומים</div></div></div></section>
@@ -920,8 +958,8 @@ function modView() {
 }
 
 function adminView() {
-  if (!S.adminCode) return `<section class="card"><h2>👑 כניסת מדריכים</h2>
-      <form data-form="admin-login"><label>קוד מדריך<input id="a-code" type="password" autocomplete="current-password"></label>
+  if (!S.adminCode) return `<section class="card"><h2>👑 כניסת מנהל ראשי</h2>
+      <form data-form="admin-login"><label>קוד מנהל ראשי<input id="a-code" type="password" autocomplete="current-password"></label>
       <button class="btn gold xl" type="submit">כניסה</button></form>
       ${LIVE ? '' : '<p class="muted small">במצב הדגמה הקוד הוא 1234</p>'}</section>`;
   const A = S.adminData;
@@ -929,7 +967,7 @@ function adminView() {
   const { game: g, players: ps } = S.state;
   const byId = Object.fromEntries(ps.map(p => [p.id, p]));
   const info = A.info || [];
-  const managers = info.filter(i => i.is_manager).map(i => byId[i.id]?.name).filter(Boolean);
+  const mgrs = A.managers || [];
   const claimed = info.filter(i => i.claimed).length;
   const pend = A.catches.filter(c => c.status === 'pending');
   const disputed = A.catches.filter(c => c.status === 'rejected' && c.resolved_by === 'target' && byId[c.target_id]?.alive && byId[c.catcher_id]?.alive).slice(0, 15);
@@ -948,15 +986,22 @@ function adminView() {
     : g.status === 'active'
       ? `<p>המשחק רץ: <b class="gold">${ps.filter(p => p.alive).length}</b> מתוך ${ps.length} עדיין במשחק. ${claimed} נכנסו לאתר.</p>`
       : `${winnerCard()}`;
-  return `<div class="hello"><div>👑 <b>מצב מדריך</b></div><button class="link" data-act="a-logout">יציאה</button></div>
+  return `<div class="hello"><div>👑 <b>מנהל ראשי</b></div><button class="link" data-act="a-logout">יציאה</button></div>
     <section class="card"><h3>מצב המשחק</h3>${control}</section>
     ${pend.length ? `<section class="card"><h3>⏳ תפיסות שמחכות (${pend.length})</h3><p class="muted small">אפשר לאשר גם בלי הנתפס, למשל כשהוא חסום או לא עונה.</p><ul class="alist">${pend.map(c => catchRow(c, false)).join('')}</ul></section>` : ''}
     ${disputed.length ? `<section class="card"><h3>⚖️ מחלוקות</h3><p class="muted small">הנתפס דחה. אפשר לראות את התמונה ולאשר בכל זאת.</p><ul class="alist">${disputed.map(c => catchRow(c, true)).join('')}</ul></section>` : ''}
     <section class="card"><h3>📣 קישור לילדים</h3><div class="share">${esc(link)}</div>
       ${A.join_code ? '' : '<p class="muted small">💡 כדאי לקבוע קוד גישה בהגדרות, כדי שרק מי שיש לו את הקישור יראה את השמות.</p>'}
       <div class="btn-row"><button class="btn small" data-act="a-copy" data-link="${esc(link)}">העתקה</button><a class="btn small gold" href="${esc(wa)}" target="_blank" rel="noopener">שליחה בוואטסאפ</a></div></section>
+    <section class="card"><h3>🛡️ מנהלים (${mgrs.length})</h3>
+      <p class="muted small">אתה יוצר מנהלים ונותן להם סיסמה. הם נכנסים ב"כניסת מנהלים" ויכולים לחסום ספאם, לשחרר שמות ולמחוק תמונות.</p>
+      ${mgrs.length ? `<ul class="alist">${mgrs.map(m => `<li class="arow"><span class="av">${esc(m.name.trim().charAt(0))}</span>
+        <div class="who"><div class="nm">${esc(m.name)}</div><div class="sub">${m.last_login ? 'נכנס/ה ' + ago(m.last_login) : 'עוד לא נכנס/ה'}${m.locked ? ' · 🔒 ננעל' : ''}</div></div>
+        <div class="acts"><button data-act="mgr-pass" data-id="${m.id}" data-name="${esc(m.name)}">סיסמה חדשה</button><button class="danger" data-act="mgr-remove" data-id="${m.id}" data-name="${esc(m.name)}">מחיקה</button></div></li>`).join('')}</ul>` : ''}
+      <form data-form="a-mgr" autocomplete="off" style="margin-top:12px"><div class="row2"><label>שם המנהל<input id="g-name" maxlength="30" autocomplete="off"></label>
+        <label>סיסמה<input id="g-pass" maxlength="30" autocomplete="off" dir="ltr" placeholder="ריק = אוטומטית"></label></div>
+        <div class="btn-row"><button type="button" class="btn small" data-act="gen-pass">🎲 יצירת סיסמה</button><button class="btn small gold" type="submit">➕ יצירת מנהל</button></div></form></section>
     <section class="card"><h3>👥 הרשימה (${ps.length})</h3>
-      <p class="small">⭐ מנהלים: ${managers.length ? managers.map(n => `<b class="gold">${esc(n)}</b>`).join(', ') : '<span class="muted">עוד אין. לוחצים "פעולות" ליד שם ובוחרים "הפיכה למנהל"</span>'}</p>
       <div class="tools"><input id="a-search" type="search" placeholder="חיפוש שם…" autocomplete="off"></div>
       ${peopleList('admin')}</section>
     <details class="card" id="d-add"><summary>➕ הוספת ילדים</summary>
@@ -973,8 +1018,8 @@ function adminView() {
       <label>קוד גישה לאתר (מומלץ)<input id="s-join" value="${esc(A.join_code || '')}" maxlength="20" autocomplete="off"></label>
       <p class="muted small">בלי הקוד אי אפשר לראות את השמות באתר. הקוד נכנס לבד מהקישור לילדים.</p>
       <button class="btn small" type="submit">שמירה</button></form>
-      <form data-form="a-code" style="margin-top:16px"><label>קוד מדריך חדש<input id="s-newcode" type="password" autocomplete="new-password"></label>
-      <button class="btn small" type="submit">החלפת קוד מדריך</button></form></details>
+      <form data-form="a-code" style="margin-top:16px"><label>קוד מנהל ראשי חדש<input id="s-newcode" type="password" autocomplete="new-password"></label>
+      <button class="btn small" type="submit">החלפת קוד מנהל ראשי</button></form></details>
     <details class="card" id="d-reset"><summary>🧹 ניקוי ואיפוס</summary>
       <button class="btn small" data-act="a-clear-photos">מחיקת כל התמונות של תפיסות שטופלו</button>
       <button class="btn small" data-act="a-reset" data-keep="1">סבב חדש עם אותה רשימה</button>
@@ -1125,6 +1170,26 @@ $('#avfile').addEventListener('change', async e => {
   done(r, 'התמונה עודכנה 📷');
 });
 
+/* ---------------------------------------------------------------- manager credentials */
+function credentialsSheet(name, pass, isNew) {
+  const A = S.adminData || {};
+  const link = location.origin + location.pathname + (A.join_code ? '?join=' + encodeURIComponent(A.join_code) : '') + '#mod';
+  const text = `🛡️ ${isNew ? 'הוגדרת כמנהל/ת' : 'סיסמה חדשה'} במשחק התופסת של שכב״ג שחר\nכניסה: ${link}\nשם: ${name}\nסיסמה: ${pass}`;
+  const wa = 'https://wa.me/?text=' + encodeURIComponent(text);
+  const sheet = openModal(`<h3>✅ ${isNew ? 'המנהל נוצר' : 'הסיסמה הוחלפה'}</h3>
+    <p class="muted small">שלח לו את הפרטים. את הסיסמה לא תוכל לראות שוב, אבל תמיד אפשר ליצור חדשה.</p>
+    <div class="share" style="direction:rtl;display:block;line-height:1.9"><div>שם: <b>${esc(name)}</b></div><div>סיסמה: <b dir="ltr" style="font-size:20px;letter-spacing:2px">${esc(pass)}</b></div><div class="muted small" dir="ltr">${esc(link)}</div></div>
+    <div class="btn-row"><button class="btn small" data-m="copy">העתקה</button><a class="btn small gold" href="${esc(wa)}" target="_blank" rel="noopener">שליחה בוואטסאפ</a></div>
+    <button class="btn ghost" data-m="close">סגירה</button>`);
+  const bd = sheet.parentElement;
+  bd.addEventListener('click', async e => {
+    if (e.target === bd) { closeModal(); return; }
+    const b = e.target.closest('[data-m]'); if (!b) return;
+    if (b.dataset.m === 'close') { closeModal(); return; }
+    if (b.dataset.m === 'copy') { try { await navigator.clipboard.writeText(text); toast('הפרטים הועתקו', 'ok'); } catch (err) { toast('לא הצלחתי להעתיק. סמנו והעתיקו ידנית', 'err'); } }
+  });
+}
+
 /* ---------------------------------------------------------------- actions */
 async function busy(btn, fn) {
   if (btn) { btn.classList.add('busy'); btn.disabled = true; }
@@ -1132,7 +1197,7 @@ async function busy(btn, fn) {
 }
 const val = id => (document.getElementById(id)?.value || '').trim();
 const adm = (fn, args = {}) => rpc(fn, { p_code: S.adminCode, ...args });
-const mod = (fn, args = {}) => rpc(fn, { p_id: S.session.id, p_pin: S.session.pin, ...args });
+const mod = (fn, args = {}) => rpc(fn, { p_name: S.staff.name, p_pass: S.staff.pass, ...args });
 async function done(r, okMsg) {
   if (r.error) { toast(r.error, 'err'); return false; }
   if (okMsg) toast(okMsg, 'ok');
@@ -1144,34 +1209,33 @@ async function personActions(kind, id) {
   const data = kind === 'admin' ? S.adminData : S.modData;
   const inf = (data?.info || []).find(i => i.id === id) || {};
   const isAdmin = kind === 'admin';
-  const canTouch = isAdmin || (!inf.is_manager && S.session?.id !== id);
+  const canTouch = true;
   const opts = [];
   if (canTouch) opts.push(inf.blocked ? ['unblock', '✅ ביטול חסימה'] : ['block', '🚫 חסימה (ספאם)', 'danger']);
   if (canTouch && inf.claimed) opts.push(['release', '🔓 שחרור השם (ייכנס שוב עם קוד חדש)']);
-  if (inf.has_avatar && (canTouch || (!isAdmin && S.session?.id === id))) opts.push(['clearav', '🖼️ מחיקת התמונה']);
+  if (inf.has_avatar) opts.push(['clearav', '🖼️ מחיקת התמונה']);
   if (isAdmin) opts.push(['rename', '✏️ שינוי השם']);
   if (isAdmin) {
-    opts.push(inf.is_manager ? ['unmanager', 'הסרת הרשאת מנהל'] : ['manager', '⭐ הפיכה למנהל']);
     if (!p.alive) opts.push(['revive', '↩️ החזרה למשחק']);
     opts.push(['remove', '🗑️ מחיקה מהרשימה', 'danger']);
   }
-  if (!opts.length) { toast(inf.is_manager ? 'רק המדריך יכול לטפל במנהלים' : 'אין פעולות זמינות', 'err'); return; }
-  const status = [inf.claimed ? 'נכנס/ה לאתר' : 'עוד לא נכנס/ה', inf.blocked ? '🚫 חסום' : '', inf.is_manager ? '⭐ מנהל' : '', inf.rejected ? `${inf.rejected} תפיסות נדחו` : ''].filter(Boolean).join(' · ');
+  if (!opts.length) { toast('אין פעולות זמינות', 'err'); return; }
+  const status = [inf.claimed ? 'נכנס/ה לאתר' : 'עוד לא נכנס/ה', inf.blocked ? '🚫 חסום' : '', inf.rejected ? `${inf.rejected} תפיסות נדחו` : ''].filter(Boolean).join(' · ');
   const k = await choose(esc(p.name), status, opts);
   if (!k) return;
   const n = esc(p.name);
   if (k === 'block' || k === 'unblock') {
     const on = k === 'block';
     if (on && !(await ask({ title: `לחסום את ${n}?`, text: 'הוא/היא לא יוכל/תוכל לשלוח תפיסות או לאשר. תפיסה שמחכה תבוטל. אפשר לבטל את החסימה מתי שרוצים.', ok: 'חסימה', danger: true }))) return;
-    return done(isAdmin ? await adm('tag_admin_block', { p_player_id: id, p_on: on }) : await mod('tag_mod_block', { p_player_id: id, p_on: on }), on ? `${p.name} נחסם/ה` : 'החסימה בוטלה');
+    return done(isAdmin ? await adm('tag_admin_block', { p_player_id: id, p_on: on }) : await mod('tag_staff_block', { p_player_id: id, p_on: on }), on ? `${p.name} נחסם/ה` : 'החסימה בוטלה');
   }
   if (k === 'release') {
     if (!(await ask({ title: `לשחרר את השם ${n}?`, text: 'מי שנכנס עם השם הזה ייצא. הילד/ה האמיתי/ת ייכנס/תיכנס שוב ויבחר/תבחר קוד חדש.', ok: 'שחרור' }))) return;
-    return done(isAdmin ? await adm('tag_admin_release', { p_player_id: id }) : await mod('tag_mod_release', { p_player_id: id }), 'השם שוחרר');
+    return done(isAdmin ? await adm('tag_admin_release', { p_player_id: id }) : await mod('tag_staff_release', { p_player_id: id }), 'השם שוחרר');
   }
   if (k === 'clearav') {
     if (!(await ask({ title: `למחוק את התמונה של ${n}?`, ok: 'מחיקה', danger: true }))) return;
-    return done(isAdmin ? await adm('tag_admin_clear_avatar', { p_player_id: id }) : await mod('tag_mod_clear_avatar', { p_player_id: id }), 'התמונה נמחקה');
+    return done(isAdmin ? await adm('tag_admin_clear_avatar', { p_player_id: id }) : await mod('tag_staff_clear_avatar', { p_player_id: id }), 'התמונה נמחקה');
   }
   if (k === 'rename') {
     const nn = await ask({ title: `שם חדש ל${n}`, ok: 'שמירה', input: `maxlength="30" autocomplete="off" value="${n}"` });
@@ -1203,6 +1267,20 @@ const ACT = {
   },
   person: el => personActions(el.dataset.kind, Number(el.dataset.id)),
   profile: () => profileSheet(),
+  'staff-logout': () => { staffLogout(); render(); },
+  'gen-pass': () => { const i = document.getElementById('g-pass'); if (i) i.value = genPass(); },
+  'mgr-pass': async el => {
+    const name = el.dataset.name;
+    if (!(await ask({ title: `סיסמה חדשה ל${esc(name)}?`, text: 'הסיסמה הישנה תפסיק לעבוד.', ok: 'יצירת סיסמה חדשה' }))) return;
+    const pass = genPass();
+    const r = await adm('tag_admin_manager_pass', { p_manager_id: Number(el.dataset.id), p_pass: pass });
+    if (r.error) { toast(r.error, 'err'); return; }
+    await refresh(); credentialsSheet(name, pass, false);
+  },
+  'mgr-remove': async el => {
+    if (!(await ask({ title: `למחוק את המנהל ${esc(el.dataset.name)}?`, text: 'הוא לא יוכל להיכנס יותר לניהול.', ok: 'מחיקה', danger: true }))) return;
+    done(await adm('tag_admin_remove_manager', { p_manager_id: Number(el.dataset.id) }), 'המנהל נמחק');
+  },
   pick: el => { S.loginId = el.dataset.id; render(); setTimeout(() => document.getElementById('c-pin') ? document.getElementById('c-pin').focus() : document.getElementById('l-pin')?.focus(), 50); },
   unpick: () => { S.loginId = ''; render(); },
   theme: () => { const l = !isLight(); applyTheme(l); store.set('tofeset.theme', l ? 'light' : 'dark'); render(); },
@@ -1226,6 +1304,21 @@ function saveSession(r, pin) {
   S.session = { id: r.id, name: r.name, pin }; store.set('tofeset.session', S.session); S.loginId = ''; S.loginQ = '';
 }
 const FORMS = {
+  async 'staff-login'() {
+    const name = val('st-name'), pass = document.getElementById('st-pass')?.value || '';
+    const r = await rpc('tag_staff_login', { p_name: name, p_pass: pass });
+    if (r.error) { toast(r.error, 'err'); return; }
+    S.staff = { name: r.name, pass }; store.set('tofeset.staff', S.staff);
+    toast(`ברוך הבא, ${r.name} 🛡️`, 'ok'); await refresh();
+  },
+  async 'a-mgr'() {
+    const name = val('g-name'); let pass = val('g-pass');
+    if (!pass) pass = genPass();
+    const r = await adm('tag_admin_add_manager', { p_name: name, p_pass: pass });
+    if (r.error) { toast(r.error, 'err'); return; }
+    ['g-name', 'g-pass'].forEach(id => { const i = document.getElementById(id); if (i) i.value = ''; });
+    await refresh(); credentialsSheet(r.name, pass, true);
+  },
   async claim() {
     const id = Number(S.loginId), pin = val('c-pin'), pin2 = val('c-pin2');
     if (!/^[0-9]{4}$/.test(pin)) { toast('הקוד צריך להיות 4 ספרות', 'err'); return; }

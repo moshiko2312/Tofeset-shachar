@@ -69,6 +69,18 @@ alter table public.tag_catches add column if not exists reject_reason text;
 create unique index if not exists tag_catches_one_pending
   on public.tag_catches (catcher_id) where status = 'pending';
 
+-- Managers: accounts the head admin creates (name + password), separate from the kids list.
+create table if not exists public.tag_managers (
+  id           bigint generated always as identity primary key,
+  name         text not null,
+  pass_hash    text not null,
+  failed       int not null default 0,
+  locked_until timestamptz,
+  last_login   timestamptz,
+  created_at   timestamptz not null default now()
+);
+create unique index if not exists tag_managers_name_uq on public.tag_managers (lower(btrim(name)));
+
 -- >>> COUNSELOR (ADMIN) CODE: change 'shachar2026' below before running <<<
 -- (used only on the first run; later you can change it from the admin screen)
 insert into public.tag_game (id, admin_hash)
@@ -79,9 +91,10 @@ on conflict (id) do nothing;
 alter table public.tag_game    enable row level security;
 alter table public.tag_players enable row level security;
 alter table public.tag_catches enable row level security;
-revoke all on public.tag_game, public.tag_players, public.tag_catches from public;
+alter table public.tag_managers enable row level security;
+revoke all on public.tag_game, public.tag_players, public.tag_catches, public.tag_managers from public;
 do $$ begin
-  execute 'revoke all on public.tag_game, public.tag_players, public.tag_catches from anon, authenticated';
+  execute 'revoke all on public.tag_game, public.tag_players, public.tag_catches, public.tag_managers from anon, authenticated';
 exception when undefined_object then null; end $$;
 
 -- older versions of functions that changed signature
@@ -150,6 +163,27 @@ begin
     return 'אין לך הרשאת מנהל';
   end if;
   return null;
+end $$;
+
+-- Manager login check. Returns {"id","name"} or {"error"}. Locks after 8 wrong tries.
+create or replace function tag_private.check_staff(p_name text, p_pass text) returns jsonb
+language plpgsql set search_path = '' as $$
+declare m public.tag_managers;
+begin
+  select * into m from public.tag_managers where lower(btrim(name)) = lower(btrim(coalesce(p_name, ''))) for update;
+  if not found then return tag_private.err('שם המנהל או הסיסמה לא נכונים'); end if;
+  if m.locked_until is not null and m.locked_until > now() then
+    return tag_private.err('יותר מדי ניסיונות. נסה שוב בעוד כמה דקות');
+  end if;
+  if extensions.crypt(coalesce(p_pass, ''), m.pass_hash) = m.pass_hash then
+    if m.failed > 0 then update public.tag_managers set failed = 0, locked_until = null where id = m.id; end if;
+    return jsonb_build_object('id', m.id, 'name', m.name);
+  end if;
+  update public.tag_managers
+     set failed       = case when failed >= 7 then 0 else failed + 1 end,
+         locked_until = case when failed >= 7 then now() + interval '5 minutes' else locked_until end
+   where id = m.id;
+  return tag_private.err('שם המנהל או הסיסמה לא נכונים');
 end $$;
 
 create or replace function tag_private.check_admin(p_code text) returns text
@@ -547,6 +581,56 @@ begin
   return jsonb_build_object('ok', true);
 end $$;
 
+-- ---------------------------------------------------------- manager accounts (created by the head admin)
+create or replace function public.tag_staff_login(p_name text, p_pass text)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v jsonb;
+begin
+  v := tag_private.check_staff(p_name, p_pass);
+  if v ? 'error' then return v; end if;
+  update public.tag_managers set last_login = now() where id = (v->>'id')::bigint;
+  return v || jsonb_build_object('ok', true);
+end $$;
+
+create or replace function public.tag_staff_state(p_name text, p_pass text)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v jsonb;
+begin
+  v := tag_private.check_staff(p_name, p_pass);
+  if v ? 'error' then return v; end if;
+  return jsonb_build_object('ok', true, 'me', v, 'info', tag_private.players_info());
+end $$;
+
+create or replace function public.tag_staff_block(p_name text, p_pass text, p_player_id bigint, p_on boolean)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v jsonb;
+begin
+  v := tag_private.check_staff(p_name, p_pass);
+  if v ? 'error' then return v; end if;
+  perform tag_private.set_blocked(p_player_id, coalesce(p_on, false), v->>'name');
+  return jsonb_build_object('ok', true);
+end $$;
+
+create or replace function public.tag_staff_release(p_name text, p_pass text, p_player_id bigint)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v jsonb;
+begin
+  v := tag_private.check_staff(p_name, p_pass);
+  if v ? 'error' then return v; end if;
+  perform tag_private.release(p_player_id);
+  return jsonb_build_object('ok', true);
+end $$;
+
+create or replace function public.tag_staff_clear_avatar(p_name text, p_pass text, p_player_id bigint)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v jsonb;
+begin
+  v := tag_private.check_staff(p_name, p_pass);
+  if v ? 'error' then return v; end if;
+  perform tag_private.clear_avatar(p_player_id);
+  return jsonb_build_object('ok', true);
+end $$;
+
 -- ---------------------------------------------------------- admin (counselor)
 create or replace function public.tag_admin_state(p_code text)
 returns jsonb language plpgsql security definer set search_path = '' as $$
@@ -558,6 +642,11 @@ begin
     'ok', true,
     'join_code', (select join_code from public.tag_game where id = 1),
     'info', tag_private.players_info(),
+    'managers', coalesce((
+      select jsonb_agg(jsonb_build_object('id', m.id, 'name', m.name, 'last_login', m.last_login,
+               'created_at', m.created_at, 'locked', coalesce(m.locked_until > now(), false))
+             order by m.created_at)
+        from public.tag_managers m), '[]'::jsonb),
     'catches', coalesce((
       select jsonb_agg(jsonb_build_object(
                'id', c.id, 'catcher_id', c.catcher_id, 'target_id', c.target_id,
@@ -726,6 +815,52 @@ begin
     return tag_private.err('השם "' || v_name || '" כבר ברשימה');
   end if;
   update public.tag_players set name = v_name where id = p_player_id;
+  return jsonb_build_object('ok', true);
+end $$;
+
+create or replace function public.tag_admin_add_manager(p_code text, p_name text, p_pass text)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v_err text; v_name text := btrim(regexp_replace(coalesce(p_name, ''), '\s+', ' ', 'g')); v_id bigint;
+begin
+  v_err := tag_private.check_admin(p_code);
+  if v_err is not null then return tag_private.err(v_err); end if;
+  if char_length(v_name) < 2 or char_length(v_name) > 30 then
+    return tag_private.err('השם צריך להיות בין 2 ל-30 תווים');
+  end if;
+  if char_length(coalesce(p_pass, '')) < 4 then
+    return tag_private.err('הסיסמה צריכה להיות לפחות 4 תווים');
+  end if;
+  if exists (select 1 from public.tag_managers where lower(btrim(name)) = lower(v_name)) then
+    return tag_private.err('כבר יש מנהל בשם הזה');
+  end if;
+  insert into public.tag_managers (name, pass_hash)
+  values (v_name, extensions.crypt(p_pass, extensions.gen_salt('bf')))
+  returning id into v_id;
+  return jsonb_build_object('ok', true, 'id', v_id, 'name', v_name);
+end $$;
+
+create or replace function public.tag_admin_manager_pass(p_code text, p_manager_id bigint, p_pass text)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v_err text;
+begin
+  v_err := tag_private.check_admin(p_code);
+  if v_err is not null then return tag_private.err(v_err); end if;
+  if char_length(coalesce(p_pass, '')) < 4 then
+    return tag_private.err('הסיסמה צריכה להיות לפחות 4 תווים');
+  end if;
+  update public.tag_managers
+     set pass_hash = extensions.crypt(p_pass, extensions.gen_salt('bf')), failed = 0, locked_until = null
+   where id = p_manager_id;
+  return jsonb_build_object('ok', true);
+end $$;
+
+create or replace function public.tag_admin_remove_manager(p_code text, p_manager_id bigint)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v_err text;
+begin
+  v_err := tag_private.check_admin(p_code);
+  if v_err is not null then return tag_private.err(v_err); end if;
+  delete from public.tag_managers where id = p_manager_id;
   return jsonb_build_object('ok', true);
 end $$;
 
