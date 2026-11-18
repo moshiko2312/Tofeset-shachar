@@ -126,6 +126,13 @@ details.pin-box summary{cursor:pointer;font-weight:700}
 body.is-live nav.tabs{display:none}
 body.is-live .wrap{padding-bottom:30px}
 @media(min-width:900px){body.is-live .wrap{max-width:1300px}.live-grid{grid-template-columns:1fr 1fr}.live-pairs{grid-column:1 / -1}}
+.ro-handle{font-size:24px;line-height:1;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;padding:6px 8px;color:var(--gold-hi);flex:none}
+.ro-row{border-radius:12px}
+.ro-row.dragging{background:var(--surface);box-shadow:0 10px 26px var(--shadow);outline:1.5px solid var(--gold);position:relative;z-index:2}
+.ro-list .num{width:34px;height:34px;font-size:13px;border-width:1.5px}
+.list-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.list-head h3{margin:0}
+.list-head .btn{width:auto;margin:0;padding:6px 12px;min-height:36px}
 .name-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;max-height:52vh;overflow:auto;padding:2px}
 .name-btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:9px 13px;font-size:16.5px;font-weight:500;cursor:pointer;color:var(--text)}
 .name-btn .av{width:26px;height:26px;font-size:12px;border-width:1px}
@@ -422,6 +429,11 @@ const demo = (() => {
     if (on) db.catches.forEach(c => { if (c.catcher_id === p.id && c.status === 'pending') Object.assign(c, { status: 'cancelled', resolved_by: 'blocked', resolved_at: now() }); });
   };
   const release = id => { const p = P(id); if (p) Object.assign(p, { pin: null, claimed_at: null }); };
+  const setOrder = ids => {
+    ids = (ids || []).map(Number);
+    if (ids.length !== db.players.length || new Set(ids).size !== ids.length || ids.some(id => !P(id))) return err('הרשימה השתנתה בינתיים. רענן ונסה שוב');
+    ids.forEach((id, i) => { P(id).position = i + 1; }); return { ok: true };
+  };
   const clearAv = id => { const p = P(id); if (p && p.avatar) Object.assign(p, { avatar: null, avatar_v: (p.avatar_v || 0) + 1 }); };
   const F = {
     tag_state({ p_join_code }) {
@@ -537,6 +549,8 @@ const demo = (() => {
       const m = db.managers.find(x => x.id === Number(p_manager_id)); if (m) m.pass = String(p_pass); return { ok: true };
     },
     tag_admin_remove_manager({ p_code, p_manager_id }) { const e = admErr(p_code); if (e) return err(e); db.managers = db.managers.filter(m => m.id !== Number(p_manager_id)); return { ok: true }; },
+    tag_admin_set_order({ p_code, p_ids }) { const e = admErr(p_code); if (e) return err(e); return setOrder(p_ids); },
+    tag_staff_set_order({ p_name, p_pass, p_ids }) { const m = staff(p_name, p_pass); if (!m) return err(staffErr); return setOrder(p_ids); },
     tag_mod_state({ p_id, p_pin }) { const e = modErr(p_id, p_pin); return e ? err(e) : { ok: true, info: info() }; },
     tag_mod_block({ p_id, p_pin, p_player_id, p_on }) {
       const e = modErr(p_id, p_pin); if (e) return err(e);
@@ -646,6 +660,7 @@ const S = {
   loginId: '',
   loginQ: '',
   lastFeed: null,
+  reorder: null,
   flash: null,
   filter: 'all',
   search: '', aSearch: '', mSearch: '',
@@ -753,6 +768,7 @@ function setHTML(el, html) {
 }
 
 function render() {
+  if (drag) return;
   renderHeader();
   setHTML($('#demo'), LIVE ? '' : `<div class="demo-bar">✨ מצב הדגמה: הנתונים נשמרים רק במכשיר הזה. קוד מדריך: <b>1234</b>. בכניסה הראשונה כל ילד בוחר קוד.</div>`);
   let html;
@@ -988,6 +1004,48 @@ function rulesView() {
     <p class="center muted">בהצלחה, צוות שכב״ג ❤️‍🔥</p>`;
 }
 
+/* reorder the list (head admin and managers) */
+function reorderCard() {
+  const R = S.reorder; const byId = Object.fromEntries(S.state.players.map(p => [p.id, p]));
+  const active = S.state.game.status !== 'registration';
+  const btns = `<div class="btn-row"><button class="btn small gold" data-act="ro-save">💾 שמירת הסדר</button><button class="btn small ghost" data-act="ro-cancel">ביטול</button></div>`;
+  return `<section class="card"><h3>↕️ שינוי סדר הרשימה</h3>
+    <p class="muted small">גוררים את ⠿ למעלה או למטה, או לוחצים על החיצים. כל אחד תופס את מי שאחריו, והאחרון את הראשון.</p>
+    ${active ? '<div class="notice warn">המשחק כבר רץ: שינוי הסדר משנה מי רודף אחרי מי.</div>' : ''}${btns}
+    <ul class="alist ro-list" id="ro-list" style="margin-top:10px">${R.ids.map((id, i) => { const p = byId[id]; if (!p) return '';
+      return `<li class="arow ro-row" data-id="${id}"><span class="ro-handle" data-handle>⠿</span><span class="num"><i>${i + 1}</i></span>
+        <div class="who"><div class="nm">${esc(p.name)}</div>${p.alive ? '' : '<div class="sub">נתפס/ה</div>'}</div>
+        <div class="acts"><button data-act="ro-up" data-id="${id}">▲</button><button data-act="ro-down" data-id="${id}">▼</button></div></li>`; }).join('')}</ul>
+    ${btns}</section>`;
+}
+let drag = null;
+document.addEventListener('pointerdown', e => {
+  const h = e.target.closest('[data-handle]'); if (!h) return;
+  e.preventDefault();
+  drag = { row: h.closest('.ro-row') }; drag.row.classList.add('dragging');
+  try { h.setPointerCapture(e.pointerId); } catch (err) {}
+});
+document.addEventListener('pointermove', e => {
+  if (!drag) return; e.preventDefault();
+  const list = document.getElementById('ro-list'); if (!list) return;
+  let before = null;
+  for (const r of list.querySelectorAll('.ro-row')) {
+    if (r === drag.row) continue;
+    const b = r.getBoundingClientRect(); if (e.clientY < b.top + b.height / 2) { before = r; break; }
+  }
+  if (before) { if (drag.row.nextSibling !== before) list.insertBefore(drag.row, before); } else if (list.lastElementChild !== drag.row) list.appendChild(drag.row);
+  if (e.clientY < 90) window.scrollBy(0, -14); else if (e.clientY > innerHeight - 120) window.scrollBy(0, 14);
+}, { passive: false });
+function endDrag() {
+  if (!drag) return;
+  drag.row.classList.remove('dragging');
+  const list = document.getElementById('ro-list');
+  if (list && S.reorder) S.reorder.ids = [...list.querySelectorAll('.ro-row')].map(r => Number(r.dataset.id));
+  drag = null; render();
+}
+document.addEventListener('pointerup', endDrag);
+document.addEventListener('pointercancel', endDrag);
+
 /* people list shared by the managers tab and the counselor screen */
 function peopleList(kind) {
   const data = kind === 'admin' ? S.adminData : S.modData;
@@ -1024,7 +1082,8 @@ function modView() {
       <div class="stats-row" style="margin:10px 0 0"><div class="stat"><div class="n">${info.filter(i => i.claimed).length}</div><div class="l">נכנסו</div></div>
       <div class="stat"><div class="n">${info.length - info.filter(i => i.claimed).length}</div><div class="l">עוד לא נכנסו</div></div>
       <div class="stat"><div class="n">${blocked}</div><div class="l">חסומים</div></div></div></section>
-    <section class="card"><div class="tools"><input id="m-search" type="search" placeholder="חיפוש שם…" autocomplete="off"></div>${peopleList('mod')}</section>`;
+    ${S.reorder && S.reorder.kind === 'mod' ? reorderCard() : `<section class="card"><div class="list-head"><h3>👥 הרשימה (${S.state.players.length})</h3><button class="btn small" data-act="ro-start" data-kind="mod">↕️ שינוי סדר</button></div>
+      <div class="tools"><input id="m-search" type="search" placeholder="חיפוש שם…" autocomplete="off"></div>${peopleList('mod')}</section>`}`;
 }
 
 function adminView() {
@@ -1071,9 +1130,9 @@ function adminView() {
       <form data-form="a-mgr" autocomplete="off" style="margin-top:12px"><div class="row2"><label>שם המנהל<input id="g-name" maxlength="30" autocomplete="off"></label>
         <label>סיסמה<input id="g-pass" maxlength="30" autocomplete="off" dir="ltr" placeholder="ריק = אוטומטית"></label></div>
         <div class="btn-row"><button type="button" class="btn small" data-act="gen-pass">🎲 יצירת סיסמה</button><button class="btn small gold" type="submit">➕ יצירת מנהל</button></div></form></section>
-    <section class="card"><h3>👥 הרשימה (${ps.length})</h3>
+    ${S.reorder && S.reorder.kind === 'admin' ? reorderCard() : `<section class="card"><div class="list-head"><h3>👥 הרשימה (${ps.length})</h3><button class="btn small" data-act="ro-start" data-kind="admin">↕️ שינוי סדר</button></div>
       <div class="tools"><input id="a-search" type="search" placeholder="חיפוש שם…" autocomplete="off"></div>
-      ${peopleList('admin')}</section>
+      ${peopleList('admin')}`}</section>
     <details class="card" id="d-add"><summary>➕ הוספת ילדים</summary>
       <form data-form="a-add" autocomplete="off"><label>שם אחד<input id="a-name" maxlength="30" autocomplete="off"></label>
       <button class="btn small" type="submit">הוספה לסוף הרשימה</button></form>
@@ -1338,6 +1397,16 @@ const ACT = {
   person: el => personActions(el.dataset.kind, Number(el.dataset.id)),
   profile: () => profileSheet(),
   'staff-logout': () => { staffLogout(); render(); },
+  'ro-start': el => { S.reorder = { kind: el.dataset.kind, ids: S.state.players.map(p => p.id) }; render(); },
+  'ro-cancel': () => { S.reorder = null; render(); },
+  'ro-up': el => { const a = S.reorder.ids, i = a.indexOf(Number(el.dataset.id)); if (i > 0) { [a[i - 1], a[i]] = [a[i], a[i - 1]]; render(); } },
+  'ro-down': el => { const a = S.reorder.ids, i = a.indexOf(Number(el.dataset.id)); if (i >= 0 && i < a.length - 1) { [a[i + 1], a[i]] = [a[i], a[i + 1]]; render(); } },
+  'ro-save': el => busy(el, async () => {
+    const R = S.reorder;
+    const r = R.kind === 'admin' ? await adm('tag_admin_set_order', { p_ids: R.ids }) : await mod('tag_staff_set_order', { p_ids: R.ids });
+    if (r.error) { toast(r.error, 'err'); return; }
+    S.reorder = null; await done(r, 'הסדר נשמר ✅');
+  }),
   'gen-pass': () => { const i = document.getElementById('g-pass'); if (i) i.value = genPass(); },
   'mgr-pass': async el => {
     const name = el.dataset.name;

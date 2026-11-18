@@ -290,6 +290,24 @@ language sql set search_path = '' as $$
   update public.tag_players set avatar = null, avatar_v = avatar_v + 1 where id = p_player_id and avatar is not null;
 $$;
 
+-- New list order: p_ids must contain every player exactly once, first = position 1.
+create or replace function tag_private.set_order(p_ids bigint[]) returns jsonb
+language plpgsql set search_path = '' as $$
+declare v_total int;
+begin
+  select count(*) into v_total from public.tag_players;
+  if p_ids is null or cardinality(p_ids) <> v_total
+     or (select count(distinct x) from unnest(p_ids) as x) <> v_total
+     or exists (select 1 from unnest(p_ids) as x
+                 where not exists (select 1 from public.tag_players p where p.id = x)) then
+    return tag_private.err('הרשימה השתנתה בינתיים. רענן ונסה שוב');
+  end if;
+  update public.tag_players p set position = t.i
+    from unnest(p_ids) with ordinality as t(id, i)
+   where p.id = t.id;
+  return jsonb_build_object('ok', true);
+end $$;
+
 create or replace function tag_private.add_name(p_name text) returns jsonb
 language plpgsql set search_path = '' as $$
 declare v_name text := btrim(regexp_replace(coalesce(p_name, ''), '\s+', ' ', 'g')); v_id bigint;
@@ -631,6 +649,16 @@ begin
   return jsonb_build_object('ok', true);
 end $$;
 
+create or replace function public.tag_staff_set_order(p_name text, p_pass text, p_ids bigint[])
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v jsonb;
+begin
+  perform 1 from public.tag_game where id = 1 for update;
+  v := tag_private.check_staff(p_name, p_pass);
+  if v ? 'error' then return v; end if;
+  return tag_private.set_order(p_ids);
+end $$;
+
 -- ---------------------------------------------------------- admin (counselor)
 create or replace function public.tag_admin_state(p_code text)
 returns jsonb language plpgsql security definer set search_path = '' as $$
@@ -862,6 +890,16 @@ begin
   if v_err is not null then return tag_private.err(v_err); end if;
   delete from public.tag_managers where id = p_manager_id;
   return jsonb_build_object('ok', true);
+end $$;
+
+create or replace function public.tag_admin_set_order(p_code text, p_ids bigint[])
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v_err text;
+begin
+  perform 1 from public.tag_game where id = 1 for update;
+  v_err := tag_private.check_admin(p_code);
+  if v_err is not null then return tag_private.err(v_err); end if;
+  return tag_private.set_order(p_ids);
 end $$;
 
 create or replace function public.tag_admin_settings(p_code text, p_title text, p_join_code text)
