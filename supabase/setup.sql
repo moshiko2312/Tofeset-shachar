@@ -37,6 +37,8 @@ create table if not exists public.tag_players (
   blocked       boolean not null default false,
   blocked_at    timestamptz,
   blocked_by    text,
+  avatar        text,              -- small profile photo (data URL)
+  avatar_v      int not null default 0,
   failed_logins int not null default 0,
   locked_until  timestamptz,
   created_at    timestamptz not null default now()
@@ -47,6 +49,8 @@ alter table public.tag_players add column if not exists is_manager boolean not n
 alter table public.tag_players add column if not exists blocked boolean not null default false;
 alter table public.tag_players add column if not exists blocked_at timestamptz;
 alter table public.tag_players add column if not exists blocked_by text;
+alter table public.tag_players add column if not exists avatar text;
+alter table public.tag_players add column if not exists avatar_v int not null default 0;
 create unique index if not exists tag_players_name_uq on public.tag_players (lower(btrim(name)));
 
 create table if not exists public.tag_catches (
@@ -218,6 +222,7 @@ language sql stable set search_path = '' as $$
   select coalesce(jsonb_agg(jsonb_build_object(
            'id', p.id, 'claimed', p.pin_hash is not null, 'claimed_at', p.claimed_at,
            'is_manager', p.is_manager, 'blocked', p.blocked, 'blocked_by', p.blocked_by,
+           'has_avatar', p.avatar is not null,
            'locked', coalesce(p.locked_until > now(), false),
            'rejected', (select count(*) from public.tag_catches c
                          where c.catcher_id = p.id and c.status = 'rejected'))
@@ -244,6 +249,11 @@ language sql set search_path = '' as $$
   update public.tag_players
      set pin_hash = null, claimed_at = null, failed_logins = 0, locked_until = null
    where id = p_player_id;
+$$;
+
+create or replace function tag_private.clear_avatar(p_player_id bigint) returns void
+language sql set search_path = '' as $$
+  update public.tag_players set avatar = null, avatar_v = avatar_v + 1 where id = p_player_id and avatar is not null;
 $$;
 
 create or replace function tag_private.add_name(p_name text) returns jsonb
@@ -289,6 +299,7 @@ language sql stable security definer set search_path = '' as $$
     'players', coalesce((
       select jsonb_agg(jsonb_build_object(
                'id', p.id, 'name', p.name, 'alive', p.alive, 'claimed', p.pin_hash is not null,
+               'avatar_v', case when p.avatar is null then 0 else p.avatar_v end,
                'target_id', case when t.target_id = p.id then null else t.target_id end,
                'caught_by', p.caught_by, 'caught_at', p.caught_at,
                'catches', coalesce(cnt.n, 0))
@@ -369,6 +380,7 @@ begin
     'ok', true,
     'me', jsonb_build_object('id', me.id, 'name', me.name, 'alive', me.alive,
             'blocked', me.blocked, 'is_manager', me.is_manager,
+            'avatar_v', case when me.avatar is null then 0 else me.avatar_v end,
             'caught_at', me.caught_at,
             'caught_by', (select name from public.tag_players where id = me.caught_by),
             'catches', (select count(*) from public.tag_catches
@@ -439,6 +451,49 @@ begin
   return jsonb_build_object('ok', true);
 end $$;
 
+-- Profile photos are loaded separately and only when they change (avatar_v in tag_state).
+create or replace function public.tag_avatars(p_join_code text, p_ids bigint[])
+returns jsonb language sql stable security definer set search_path = '' as $$
+  select case when not tag_private.access_ok(p_join_code) then tag_private.err('קוד הגישה לא נכון')
+  else coalesce((select jsonb_object_agg(p.id::text, jsonb_build_object('v', p.avatar_v, 'src', p.avatar))
+                   from public.tag_players p
+                  where p.id = any (p_ids[1:100]) and p.avatar is not null), '{}'::jsonb) end;
+$$;
+
+-- A kid sets or removes their own profile photo (p_avatar null or '' removes it).
+create or replace function public.tag_set_avatar(p_id bigint, p_pin text, p_avatar text)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v_err text;
+begin
+  v_err := tag_private.check_pin(p_id, p_pin);
+  if v_err is not null then return tag_private.err(v_err); end if;
+  if exists (select 1 from public.tag_players where id = p_id and blocked) then
+    return tag_private.err('החשבון שלך חסום. פנה למדריך');
+  end if;
+  if coalesce(p_avatar, '') = '' then
+    perform tag_private.clear_avatar(p_id);
+    return jsonb_build_object('ok', true);
+  end if;
+  if p_avatar !~ '^data:image/(jpeg|png|webp);base64,' or char_length(p_avatar) > 60000 then
+    return tag_private.err('התמונה לא תקינה או גדולה מדי');
+  end if;
+  update public.tag_players set avatar = p_avatar, avatar_v = avatar_v + 1 where id = p_id;
+  return jsonb_build_object('ok', true);
+end $$;
+
+create or replace function public.tag_change_pin(p_id bigint, p_pin text, p_new_pin text)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v_err text;
+begin
+  v_err := tag_private.check_pin(p_id, p_pin);
+  if v_err is not null then return tag_private.err(v_err); end if;
+  if coalesce(p_new_pin, '') !~ '^[0-9]{4}$' then
+    return tag_private.err('הקוד האישי צריך להיות 4 ספרות');
+  end if;
+  update public.tag_players set pin_hash = extensions.crypt(p_new_pin, extensions.gen_salt('bf')) where id = p_id;
+  return jsonb_build_object('ok', true);
+end $$;
+
 -- ---------------------------------------------------------- managers (kids marked as managers)
 create or replace function public.tag_mod_state(p_id bigint, p_pin text)
 returns jsonb language plpgsql security definer set search_path = '' as $$
@@ -476,6 +531,19 @@ begin
     return tag_private.err('רק המדריך יכול לשחרר שם של מנהל');
   end if;
   perform tag_private.release(p_player_id);
+  return jsonb_build_object('ok', true);
+end $$;
+
+create or replace function public.tag_mod_clear_avatar(p_id bigint, p_pin text, p_player_id bigint)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v_err text;
+begin
+  v_err := tag_private.check_manager(p_id, p_pin);
+  if v_err is not null then return tag_private.err(v_err); end if;
+  if p_player_id <> p_id and exists (select 1 from public.tag_players where id = p_player_id and is_manager) then
+    return tag_private.err('רק המדריך יכול למחוק תמונה של מנהל');
+  end if;
+  perform tag_private.clear_avatar(p_player_id);
   return jsonb_build_object('ok', true);
 end $$;
 
@@ -632,6 +700,32 @@ begin
   v_err := tag_private.check_admin(p_code);
   if v_err is not null then return tag_private.err(v_err); end if;
   update public.tag_players set is_manager = coalesce(p_on, false) where id = p_player_id;
+  return jsonb_build_object('ok', true);
+end $$;
+
+create or replace function public.tag_admin_clear_avatar(p_code text, p_player_id bigint)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v_err text;
+begin
+  v_err := tag_private.check_admin(p_code);
+  if v_err is not null then return tag_private.err(v_err); end if;
+  perform tag_private.clear_avatar(p_player_id);
+  return jsonb_build_object('ok', true);
+end $$;
+
+create or replace function public.tag_admin_rename(p_code text, p_player_id bigint, p_name text)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v_err text; v_name text := btrim(regexp_replace(coalesce(p_name, ''), '\s+', ' ', 'g'));
+begin
+  v_err := tag_private.check_admin(p_code);
+  if v_err is not null then return tag_private.err(v_err); end if;
+  if char_length(v_name) < 2 or char_length(v_name) > 30 then
+    return tag_private.err('השם צריך להיות בין 2 ל-30 תווים');
+  end if;
+  if exists (select 1 from public.tag_players where lower(btrim(name)) = lower(v_name) and id <> p_player_id) then
+    return tag_private.err('השם "' || v_name || '" כבר ברשימה');
+  end if;
+  update public.tag_players set name = v_name where id = p_player_id;
   return jsonb_build_object('ok', true);
 end $$;
 

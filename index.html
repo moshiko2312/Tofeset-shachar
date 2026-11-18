@@ -63,6 +63,21 @@ textarea{display:block;width:100%;margin-top:6px;background:#070707;border:1px s
 textarea:focus{border-color:var(--gold)}
 .tag{display:inline-block;font-size:11.5px;font-weight:500;border-radius:99px;padding:1px 8px;margin-inline-start:6px;border:1px solid rgba(212,175,55,.5);color:var(--gold-hi);vertical-align:middle;white-space:nowrap}
 .tag.red{border-color:#5b2020;color:#ff9a9a}
+.num img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%}
+.num i{font-style:normal}
+.num.has-av i{position:absolute;bottom:-5px;left:-5px;min-width:20px;height:20px;border-radius:10px;background:#000;border:1.5px solid var(--gold);font-size:11px;display:grid;place-items:center;padding:0 4px;color:var(--gold-hi);line-height:1}
+.node.out .num img{filter:grayscale(1) brightness(.55)}
+.av{display:inline-grid;place-items:center;width:34px;height:34px;border-radius:50%;overflow:hidden;border:1.5px solid var(--gold);background:#0b0b0b;color:var(--gold-hi);font-weight:700;font-size:15px;vertical-align:middle;flex:none}
+.av img{width:100%;height:100%;object-fit:cover}
+.av.lg{width:110px;height:110px;font-size:40px;border-width:3px;box-shadow:0 8px 26px rgba(212,175,55,.25)}
+.av.md{width:52px;height:52px;font-size:20px;border-width:2px}
+.me-av{background:none;border:none;padding:0;cursor:pointer;display:flex;align-items:center;gap:10px;font:inherit;color:inherit;text-align:right}
+.target-av{margin:12px auto 0}
+.prof-av{width:132px;height:132px;margin:6px auto 10px;border-radius:50%;overflow:hidden;border:3px solid var(--gold);display:grid;place-items:center;background:#0b0b0b;font-size:52px;font-weight:900;color:var(--gold-hi);box-shadow:0 10px 30px rgba(212,175,55,.25)}
+.prof-av img{width:100%;height:100%;object-fit:cover}
+details.pin-box{margin-top:14px;background:#0a0a0a;border:1px solid #262626;border-radius:14px;padding:12px}
+details.pin-box summary{cursor:pointer;font-weight:700}
+.podium .av{margin:4px auto}
 label{display:block;font-size:14px;color:#cfcfcf;margin:0 0 12px;font-weight:500}
 input,select{display:block;width:100%;margin-top:6px;background:#070707;border:1px solid #2d2d2d;border-radius:12px;padding:13px 14px;font-size:18px;outline:none;transition:border-color .15s}
 input:focus,select:focus{border-color:var(--gold)}
@@ -211,6 +226,7 @@ nav.tabs a.on .i{filter:none;opacity:1}
 </div>
 <nav class="tabs"><div class="in" id="tabs"></div></nav>
 <input type="file" id="cam" accept="image/*" capture="environment" hidden>
+<input type="file" id="avfile" accept="image/*" hidden>
 <div id="modal-root"></div>
 <div id="toast"></div>
 
@@ -309,7 +325,7 @@ const demo = (() => {
     if (name.length < 2 || name.length > 30) return err('השם צריך להיות בין 2 ל-30 תווים');
     if (db.players.some(p => p.name.toLowerCase() === name.toLowerCase())) return err(`השם "${name}" כבר ברשימה`);
     const id = ++db.seq.p;
-    db.players.push({ id, name, pin: null, claimed_at: null, position: Math.max(0, ...db.players.map(p => p.position)) + 1, alive: true, caught_by: null, caught_at: null, is_manager: false, blocked: false, blocked_by: null });
+    db.players.push({ id, name, pin: null, claimed_at: null, avatar: null, avatar_v: 0, position: Math.max(0, ...db.players.map(p => p.position)) + 1, alive: true, caught_by: null, caught_at: null, is_manager: false, blocked: false, blocked_by: null });
     return { ok: true, id, name };
   };
   const load = () => {
@@ -341,7 +357,7 @@ const demo = (() => {
     return { ok: true };
   };
   const info = () => [...db.players].sort((a, b) => a.position - b.position).map(p => ({
-    id: p.id, claimed: p.pin != null, claimed_at: p.claimed_at, is_manager: p.is_manager, blocked: p.blocked, blocked_by: p.blocked_by, locked: false,
+    id: p.id, claimed: p.pin != null, claimed_at: p.claimed_at, is_manager: p.is_manager, blocked: p.blocked, blocked_by: p.blocked_by, has_avatar: !!p.avatar, locked: false,
     rejected: db.catches.filter(c => c.catcher_id === p.id && c.status === 'rejected').length }));
   const setBlocked = (id, on, by) => {
     const p = P(id); if (!p) return;
@@ -349,6 +365,7 @@ const demo = (() => {
     if (on) db.catches.forEach(c => { if (c.catcher_id === p.id && c.status === 'pending') Object.assign(c, { status: 'cancelled', resolved_by: 'blocked', resolved_at: now() }); });
   };
   const release = id => { const p = P(id); if (p) Object.assign(p, { pin: null, claimed_at: null }); };
+  const clearAv = id => { const p = P(id); if (p && p.avatar) Object.assign(p, { avatar: null, avatar_v: (p.avatar_v || 0) + 1 }); };
   const F = {
     tag_state({ p_join_code }) {
       const g = db.game;
@@ -358,7 +375,7 @@ const demo = (() => {
       const cnt = id => db.catches.filter(c => c.catcher_id === id && c.status === 'confirmed').length;
       return {
         game: { status: g.status, title: g.title, started_at: g.started_at, finished_at: g.finished_at, winner_id: g.winner_id },
-        players: [...db.players].sort((a, b) => a.position - b.position).map(p => ({ id: p.id, name: p.name, alive: p.alive, claimed: p.pin != null, target_id: p.alive ? tmap[p.id] ?? null : null, caught_by: p.caught_by, caught_at: p.caught_at, catches: cnt(p.id) })),
+        players: [...db.players].sort((a, b) => a.position - b.position).map(p => ({ id: p.id, name: p.name, alive: p.alive, claimed: p.pin != null, avatar_v: p.avatar ? p.avatar_v || 1 : 0, target_id: p.alive ? tmap[p.id] ?? null : null, caught_by: p.caught_by, caught_at: p.caught_at, catches: cnt(p.id) })),
         feed: db.catches.filter(c => c.status === 'confirmed').sort((a, b) => b.resolved_at.localeCompare(a.resolved_at)).slice(0, 40).map(c => ({ catcher: P(c.catcher_id)?.name, target: P(c.target_id)?.name, at: c.resolved_at })),
         server_time: now()
       };
@@ -379,7 +396,7 @@ const demo = (() => {
       const inc = me.blocked ? null : db.catches.filter(c => c.target_id === me.id && c.status === 'pending').sort((a, b) => b.id - a.id)[0];
       return {
         ok: true,
-        me: { id: me.id, name: me.name, alive: me.alive, blocked: me.blocked, is_manager: me.is_manager, caught_at: me.caught_at, caught_by: P(me.caught_by)?.name || null, catches: db.catches.filter(c => c.catcher_id === me.id && c.status === 'confirmed').length },
+        me: { id: me.id, name: me.name, alive: me.alive, blocked: me.blocked, is_manager: me.is_manager, avatar_v: me.avatar ? me.avatar_v || 1 : 0, caught_at: me.caught_at, caught_by: P(me.caught_by)?.name || null, catches: db.catches.filter(c => c.catcher_id === me.id && c.status === 'confirmed').length },
         target: t ? { id: t, name: P(t).name } : null,
         outgoing: out ? { id: out.id, status: out.status, reason: out.reject_reason, resolved_by: out.resolved_by, created_at: out.created_at } : null,
         incoming: inc ? { id: inc.id, catcher: P(inc.catcher_id).name, photo: inc.photo, created_at: inc.created_at } : null
@@ -411,6 +428,36 @@ const demo = (() => {
       if (p_confirm) return apply(c.id, 'target');
       Object.assign(c, { status: 'rejected', resolved_by: 'target', resolved_at: now(), reject_reason: ['tie', 'no'].includes(p_reason) ? p_reason : 'no' });
       return { ok: true };
+    },
+    tag_avatars({ p_join_code, p_ids }) {
+      if (!accessOk(p_join_code)) return err('קוד הגישה לא נכון');
+      const r = {}; (p_ids || []).slice(0, 100).forEach(id => { const p = P(id); if (p && p.avatar) r[p.id] = { v: p.avatar_v || 1, src: p.avatar }; });
+      return r;
+    },
+    tag_set_avatar({ p_id, p_pin, p_avatar }) {
+      const e = pinErr(p_id, p_pin); if (e) return err(e);
+      const p = P(p_id); if (p.blocked) return err('החשבון שלך חסום. פנה למדריך');
+      if (!p_avatar) { clearAv(p.id); return { ok: true }; }
+      if (!/^data:image\/(jpeg|png|webp);base64,/.test(p_avatar) || p_avatar.length > 60000) return err('התמונה לא תקינה או גדולה מדי');
+      Object.assign(p, { avatar: p_avatar, avatar_v: (p.avatar_v || 0) + 1 }); return { ok: true };
+    },
+    tag_change_pin({ p_id, p_pin, p_new_pin }) {
+      const e = pinErr(p_id, p_pin); if (e) return err(e);
+      if (!/^[0-9]{4}$/.test(String(p_new_pin || ''))) return err('הקוד האישי צריך להיות 4 ספרות');
+      P(p_id).pin = String(p_new_pin); return { ok: true };
+    },
+    tag_mod_clear_avatar({ p_id, p_pin, p_player_id }) {
+      const e = modErr(p_id, p_pin); if (e) return err(e);
+      if (Number(p_player_id) !== Number(p_id) && P(p_player_id)?.is_manager) return err('רק המדריך יכול למחוק תמונה של מנהל');
+      clearAv(p_player_id); return { ok: true };
+    },
+    tag_admin_clear_avatar({ p_code, p_player_id }) { const e = admErr(p_code); if (e) return err(e); clearAv(p_player_id); return { ok: true }; },
+    tag_admin_rename({ p_code, p_player_id, p_name }) {
+      const e = admErr(p_code); if (e) return err(e);
+      const name = norm(p_name);
+      if (name.length < 2 || name.length > 30) return err('השם צריך להיות בין 2 ל-30 תווים');
+      if (db.players.some(p => p.id !== Number(p_player_id) && p.name.toLowerCase() === name.toLowerCase())) return err(`השם "${name}" כבר ברשימה`);
+      const p = P(p_player_id); if (p) p.name = name; return { ok: true };
     },
     tag_mod_state({ p_id, p_pin }) { const e = modErr(p_id, p_pin); return e ? err(e) : { ok: true, info: info() }; },
     tag_mod_block({ p_id, p_pin, p_player_id, p_on }) {
@@ -528,6 +575,39 @@ const S = {
 const joinCode = () => store.get('tofeset.join') || null;
 const isManager = () => !!(S.me && S.me.me && S.me.me.is_manager && !S.me.me.blocked);
 
+/* profile photos: cached in this browser, fetched again only when a kid changes theirs */
+const AV = store.get('tofeset.av', {}) || {};
+async function syncAvatars() {
+  if (!S.state || S.state.locked) return;
+  const need = []; let changed = false;
+  const ids = new Set();
+  for (const p of S.state.players) {
+    ids.add(String(p.id));
+    const v = p.avatar_v || 0;
+    if (!v) { if (AV[p.id]) { delete AV[p.id]; changed = true; } }
+    else if (!AV[p.id] || AV[p.id].v !== v) need.push(p.id);
+  }
+  for (const k of Object.keys(AV)) if (!ids.has(k)) { delete AV[k]; changed = true; }
+  for (let i = 0; i < need.length; i += 100) {
+    const part = need.slice(i, i + 100);
+    const r = await rpc('tag_avatars', { p_join_code: joinCode(), p_ids: part });
+    if (r.error) break;
+    part.forEach(id => { const a = r[String(id)]; if (a && isImg(a.src)) AV[id] = a; else delete AV[id]; });
+    changed = true;
+  }
+  if (changed) store.set('tofeset.av', AV);
+}
+const avSrc = id => AV[id] && isImg(AV[id].src) ? AV[id].src : null;
+function av(p, cls = '') {
+  const src = p && avSrc(p.id);
+  if (src) return `<span class="av ${cls}"><img src="${esc(src)}" alt=""></span>`;
+  return `<span class="av ${cls}">${esc((p?.name || '?').trim().charAt(0))}</span>`;
+}
+function numCircle(p, n) {
+  const src = avSrc(p.id);
+  return `<span class="num ${src ? 'has-av' : ''}">${src ? `<img src="${esc(src)}" alt="">` : ''}<i>${n}</i></span>`;
+}
+
 async function refresh() {
   if (S.tab === 'admin' && S.adminCode) await refreshAdmin();
   const st = await rpc('tag_state', { p_join_code: joinCode() });
@@ -539,6 +619,7 @@ async function refresh() {
     } else S.me = me;
   }
   if (S.tab === 'mod' && isManager()) await refreshMod();
+  await syncAvatars();
   render();
 }
 async function refreshAdmin() {
@@ -619,7 +700,7 @@ function meView() {
   const me = m.me;
   const idx = ps.findIndex(p => p.id === me.id);
   const hunter = ps.find(p => p.alive && p.target_id === me.id);
-  let h = `<div class="hello"><div>היי, <b>${esc(me.name)}</b> 👋${me.is_manager ? ' <span class="tag">⭐ מנהל</span>' : ''}</div><button class="link" data-act="logout">יציאה</button></div>`;
+  let h = `<div class="hello"><button class="me-av" data-act="profile">${av(me)}<span>היי, <b>${esc(me.name)}</b>${me.is_manager ? ' <span class="tag">⭐ מנהל</span>' : ''}</span></button><button class="link" data-act="profile">✏️ הפרופיל שלי</button></div>`;
   if (me.blocked) {
     return h + `<section class="card out"><div class="big-emoji">🚫</div><h2>החשבון שלך חסום</h2>
       <p class="muted">${me.is_manager ? 'המדריך' : 'אחד המנהלים'} חסם את החשבון. אם זו טעות, פנה למדריך.</p></section>`;
@@ -642,7 +723,7 @@ function meView() {
     <div class="stat"><div class="n">${idx + 1}</div><div class="l">מספר ברשימה</div></div>
     <div class="stat"><div class="n">${ps.filter(p => p.alive).length}</div><div class="l">נשארו במשחק</div></div></section>`;
   if (me.alive && hunter && g.status === 'active')
-    h += `<section class="card hunter">👀 מי רודף אחריך? <b class="gold">${esc(hunter.name)}</b>
+    h += `<section class="card hunter">👀 מי רודף אחריך? ${avSrc(hunter.id) ? av(hunter) : ''} <b class="gold">${esc(hunter.name)}</b>
       <div class="muted small">עם עניבת צופים 🧣 אי אפשר לתפוס אותך</div></section>`;
   return h;
 }
@@ -660,6 +741,7 @@ function targetCard(m) {
   }
   const pending = o && o.status === 'pending';
   return `<section class="card target"><div class="label">🎯 המטרה שלך</div>
+    ${avSrc(t.id) ? `<div class="target-av">${av(t, 'lg')}</div>` : ''}
     <div class="target-name">${esc(t.name)}</div>${notice}
     ${pending
       ? `<div class="pending"><div class="spinner"></div><div><b>מחכים לאישור של ${esc(t.name)}</b><div class="muted small">שלחת תמונה ${ago(o.created_at)}</div></div></div>
@@ -716,7 +798,7 @@ function chainView() {
   const top = ps.filter(p => p.catches > 0).sort((a, b) => b.catches - a.catches).slice(0, 3);
   const medals = ['🥇', '🥈', '🥉'];
   const podium = top.length ? `<section class="card"><h3>🏅 מלכי התפיסות</h3><div class="podium">
-      ${[1, 0, 2].filter(i => top[i]).map(i => `<div class="${i === 0 ? 'p1' : ''}"><div class="m">${medals[i]}</div><div class="pn">${esc(top[i].name)}</div><div class="pc">${top[i].catches} תפיסות</div></div>`).join('')}
+      ${[1, 0, 2].filter(i => top[i]).map(i => `<div class="${i === 0 ? 'p1' : ''}"><div class="m">${medals[i]}</div>${avSrc(top[i].id) ? av(top[i], 'md') : ''}<div class="pn">${esc(top[i].name)}</div><div class="pc">${top[i].catches} תפיסות</div></div>`).join('')}
     </div></section>` : '';
   const fd = feed.length ? `<section class="card"><h3>⚡ מה קרה לאחרונה</h3><ul class="feed">
       ${feed.slice(0, 6).map(f => `<li><span><b>${esc(f.catcher)}</b> תפס/ה את <b>${esc(f.target)}</b></span><span class="t">${ago(f.at)}</span></li>`).join('')}</ul></section>` : '';
@@ -724,7 +806,7 @@ function chainView() {
       const sub = p.alive
         ? (p.target_id ? `🎯 תופס/ת את <b>${esc(byId[p.target_id]?.name)}</b>` : (g.status === 'finished' ? '🏆 ניצח/ה!' : ''))
         : `נתפס/ה ע״י ${esc(byId[p.caught_by]?.name || '—')}`;
-      return `<li class="node ${p.alive ? 'alive' : 'out'} ${p.id === meId ? 'me' : ''}"><span class="num">${p.n}</span>
+      return `<li class="node ${p.alive ? 'alive' : 'out'} ${p.id === meId ? 'me' : ''}">${numCircle(p, p.n)}
         <div class="who"><div class="nm">${esc(p.name)}${p.id === meId ? ' <span class="you">(אני)</span>' : ''}</div><div class="sub">${sub}</div></div>
         ${p.catches ? `<span class="badge">🏅 ${p.catches}</span>` : ''}</li>`;
     }).join('')}</ul>${!q && S.filter === 'all' && ps.length > 1 ? '<div class="loop">↺ האחרון ברשימה תופס את הראשון</div>' : ''}`
@@ -766,7 +848,7 @@ function peopleList(kind) {
     if (p.inf.rejected) bits.push(`${p.inf.rejected} תפיסות נדחו`);
     if (p.inf.locked) bits.push('🔒 ננעל');
     if (p.inf.blocked && p.inf.blocked_by) bits.push('נחסם ע״י ' + esc(p.inf.blocked_by));
-    return `<li class="arow"><span class="num">${p.n}</span>
+    return `<li class="arow">${numCircle(p, p.n)}
       <div class="who"><div class="nm">${esc(p.name)}${p.inf.is_manager ? '<span class="tag">⭐ מנהל</span>' : ''}${p.inf.blocked ? '<span class="tag red">🚫 חסום</span>' : ''}</div>
       <div class="sub">${bits.join(' · ')}</div></div>
       <div class="acts"><button data-act="person" data-kind="${kind}" data-id="${p.id}">פעולות</button></div></li>`;
@@ -927,6 +1009,71 @@ $('#cam').addEventListener('change', async e => {
   });
 });
 
+/* ---------------------------------------------------------------- profile */
+function squareAvatar(file, size = 180) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file); const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth, h = img.naturalHeight, s = Math.min(w, h);
+      const sx = (w - s) / 2, sy = h > w ? (h - s) * 0.3 : 0;
+      const c = document.createElement('canvas'); c.width = c.height = size;
+      c.getContext('2d').drawImage(img, sx, sy, s, s, 0, 0, size, size);
+      URL.revokeObjectURL(url);
+      let q = 0.82, d = c.toDataURL('image/jpeg', q);
+      while (d.length > 55000 && q > 0.35) { q -= 0.1; d = c.toDataURL('image/jpeg', q); }
+      res(d);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('bad image')); };
+    img.src = url;
+  });
+}
+function profileSheet() {
+  const me = S.me?.me; if (!me) return;
+  const src = avSrc(me.id);
+  const sheet = openModal(`<h3>✏️ הפרופיל שלי</h3>
+    <div class="prof-av">${src ? `<img src="${esc(src)}" alt="">` : esc(me.name.trim().charAt(0))}</div>
+    <div class="center"><b class="gold" style="font-size:20px">${esc(me.name)}</b><div class="muted small">את השם ברשימה קובע המדריך</div></div>
+    ${me.blocked ? '' : `<div class="btn-row"><button class="btn gold" data-m="photo">📷 ${src ? 'החלפת תמונה' : 'הוספת תמונה'}</button>${src ? '<button class="btn ghost" data-m="rmphoto">הסרה</button>' : ''}</div>
+    <p class="muted small">התמונה מופיעה ליד השם שלך בשרשרת. שמים רק תמונה שלך, ובלי תמונות מביכות. מנהלים יכולים למחוק תמונה.</p>`}
+    <details class="pin-box"><summary>🔑 החלפת הקוד האישי</summary>
+      <div class="row2"><label>קוד חדש<input id="p-pin" class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password"></label>
+      <label>שוב את הקוד<input id="p-pin2" class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password"></label></div>
+      <button class="btn small" data-m="pin">שמירת הקוד החדש</button></details>
+    <div class="btn-row"><button class="btn ghost small" data-m="logout">יציאה מהחשבון</button><button class="btn small" data-m="close">סגירה</button></div>`);
+  const bd = sheet.parentElement;
+  bd.addEventListener('click', async e => {
+    if (e.target === bd) { closeModal(); return; }
+    const b = e.target.closest('[data-m]'); if (!b) return;
+    const m = b.dataset.m;
+    if (m === 'close') return closeModal();
+    if (m === 'photo') { const f = $('#avfile'); f.value = ''; f.click(); return; }
+    if (m === 'rmphoto') {
+      await busy(b, async () => { const r = await rpc('tag_set_avatar', { p_id: S.session.id, p_pin: S.session.pin, p_avatar: null }); closeModal(); done(r, 'התמונה הוסרה'); });
+      return;
+    }
+    if (m === 'pin') {
+      const a = sheet.querySelector('#p-pin').value, c = sheet.querySelector('#p-pin2').value;
+      if (!/^[0-9]{4}$/.test(a)) { toast('הקוד צריך להיות 4 ספרות', 'err'); return; }
+      if (a !== c) { toast('הקודים לא זהים', 'err'); return; }
+      await busy(b, async () => {
+        const r = await rpc('tag_change_pin', { p_id: S.session.id, p_pin: S.session.pin, p_new_pin: a });
+        if (r.error) { toast(r.error, 'err'); return; }
+        S.session.pin = a; store.set('tofeset.session', S.session); closeModal(); toast('הקוד הוחלף 🔑', 'ok');
+      });
+      return;
+    }
+    if (m === 'logout') { closeModal(); if (await ask({ title: 'לצאת מהחשבון?', text: 'כדי להיכנס שוב תצטרך את הקוד האישי.', ok: 'יציאה' })) { logout(); render(); } }
+  });
+}
+$('#avfile').addEventListener('change', async e => {
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  let data;
+  try { data = await squareAvatar(f); } catch (err) { toast('לא הצלחתי לקרוא את התמונה', 'err'); return; }
+  closeModal();
+  const r = await rpc('tag_set_avatar', { p_id: S.session.id, p_pin: S.session.pin, p_avatar: data });
+  done(r, 'התמונה עודכנה 📷');
+});
+
 /* ---------------------------------------------------------------- actions */
 async function busy(btn, fn) {
   if (btn) { btn.classList.add('busy'); btn.disabled = true; }
@@ -950,6 +1097,8 @@ async function personActions(kind, id) {
   const opts = [];
   if (canTouch) opts.push(inf.blocked ? ['unblock', '✅ ביטול חסימה'] : ['block', '🚫 חסימה (ספאם)', 'danger']);
   if (canTouch && inf.claimed) opts.push(['release', '🔓 שחרור השם (ייכנס שוב עם קוד חדש)']);
+  if (inf.has_avatar && (canTouch || (!isAdmin && S.session?.id === id))) opts.push(['clearav', '🖼️ מחיקת התמונה']);
+  if (isAdmin) opts.push(['rename', '✏️ שינוי השם']);
   if (isAdmin) {
     opts.push(inf.is_manager ? ['unmanager', 'הסרת הרשאת מנהל'] : ['manager', '⭐ הפיכה למנהל']);
     if (!p.alive) opts.push(['revive', '↩️ החזרה למשחק']);
@@ -968,6 +1117,15 @@ async function personActions(kind, id) {
   if (k === 'release') {
     if (!(await ask({ title: `לשחרר את השם ${n}?`, text: 'מי שנכנס עם השם הזה ייצא. הילד/ה האמיתי/ת ייכנס/תיכנס שוב ויבחר/תבחר קוד חדש.', ok: 'שחרור' }))) return;
     return done(isAdmin ? await adm('tag_admin_release', { p_player_id: id }) : await mod('tag_mod_release', { p_player_id: id }), 'השם שוחרר');
+  }
+  if (k === 'clearav') {
+    if (!(await ask({ title: `למחוק את התמונה של ${n}?`, ok: 'מחיקה', danger: true }))) return;
+    return done(isAdmin ? await adm('tag_admin_clear_avatar', { p_player_id: id }) : await mod('tag_mod_clear_avatar', { p_player_id: id }), 'התמונה נמחקה');
+  }
+  if (k === 'rename') {
+    const nn = await ask({ title: `שם חדש ל${n}`, ok: 'שמירה', input: `maxlength="30" autocomplete="off" value="${n}"` });
+    if (nn == null) return;
+    return done(await adm('tag_admin_rename', { p_player_id: id, p_name: nn }), 'השם עודכן');
   }
   if (k === 'manager' || k === 'unmanager') return done(await adm('tag_admin_set_manager', { p_player_id: id, p_on: k === 'manager' }), k === 'manager' ? `${p.name} מנהל/ת עכשיו ⭐` : 'ההרשאה הוסרה');
   if (k === 'revive') return done(await adm('tag_admin_revive', { p_player_id: id }), 'הוחזר/ה למשחק');
@@ -993,6 +1151,7 @@ const ACT = {
     });
   },
   person: el => personActions(el.dataset.kind, Number(el.dataset.id)),
+  profile: () => profileSheet(),
   'a-logout': () => { S.adminCode = null; S.adminData = null; sstore.set('tofeset.admin', null); location.hash = '#me'; },
   'a-start': async el => { if (await ask({ title: 'להתחיל את המשחק?', text: 'כל אחד יתחיל לרדוף אחרי מי שבא אחריו ברשימה.', ok: '▶ מתחילים' })) busy(el, async () => done(await adm('tag_admin_start'), 'המשחק התחיל! 🏃')); },
   'a-photo': async el => { const r = await adm('tag_admin_photo', { p_catch_id: Number(el.dataset.id) }); if (r.error) toast(r.error, 'err'); else showPhoto(r.photo); },
