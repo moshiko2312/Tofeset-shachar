@@ -23,7 +23,7 @@
 [hidden]{display:none!important}
 html,body{margin:0;background:#000;color:var(--text);font-family:'Rubik',system-ui,-apple-system,'Segoe UI',Arial,sans-serif;line-height:1.45}
 body{min-height:100vh;background:linear-gradient(180deg,#141414 0%,#050505 320px,#000 100%) #000}
-button,input,select{font:inherit;color:inherit}
+button,input,select,textarea{font:inherit;color:inherit}
 .wrap{max-width:560px;margin:0 auto;padding:calc(12px + env(safe-area-inset-top)) 16px calc(104px + env(safe-area-inset-bottom))}
 
 /* header */
@@ -59,6 +59,10 @@ button,input,select{font:inherit;color:inherit}
 .welcome-logo{width:120px;height:120px;margin:4px auto 10px;filter:drop-shadow(0 8px 28px rgba(212,175,55,.3))}
 
 /* forms */
+textarea{display:block;width:100%;margin-top:6px;background:#070707;border:1px solid #2d2d2d;border-radius:12px;padding:12px 14px;font-size:16px;min-height:150px;outline:none;resize:vertical;line-height:1.6}
+textarea:focus{border-color:var(--gold)}
+.tag{display:inline-block;font-size:11.5px;font-weight:500;border-radius:99px;padding:1px 8px;margin-inline-start:6px;border:1px solid rgba(212,175,55,.5);color:var(--gold-hi);vertical-align:middle;white-space:nowrap}
+.tag.red{border-color:#5b2020;color:#ff9a9a}
 label{display:block;font-size:14px;color:#cfcfcf;margin:0 0 12px;font-weight:500}
 input,select{display:block;width:100%;margin-top:6px;background:#070707;border:1px solid #2d2d2d;border-radius:12px;padding:13px 14px;font-size:18px;outline:none;transition:border-color .15s}
 input:focus,select:focus{border-color:var(--gold)}
@@ -262,7 +266,7 @@ const isImg = s => typeof s === 'string' && s.startsWith('data:image/');
 let toastT;
 function toast(msg, type = '') {
   const t = $('#toast'); t.textContent = msg; t.className = 'show ' + type;
-  clearTimeout(toastT); toastT = setTimeout(() => t.className = '', 3200);
+  clearTimeout(toastT); toastT = setTimeout(() => t.className = '', 3400);
 }
 
 /* ---------------------------------------------------------------- backend */
@@ -286,22 +290,40 @@ async function rpc(fn, args = {}) {
 
 /* Demo mode: the same game rules as the database, kept in this browser only. */
 const demo = (() => {
-  const KEY = 'tofeset.demo.v1';
+  const KEY = 'tofeset.demo.v2';
+  const ROSTER = Array.isArray(CFG.demoRoster) && CFG.demoRoster.length ? CFG.demoRoster
+    : ['נועם', 'מאיה', 'איתי', 'שירה', 'יונתן', 'תמר', 'עומר', 'נועה', 'אורי', 'ליה', 'רועי', 'הילה'];
   let db = null;
-  const fresh = () => ({ game: { status: 'registration', title: 'משחק התופסת', join_code: '', admin: '1234', started_at: null, finished_at: null, winner_id: null }, players: [], catches: [], seq: { p: 0, c: 0 } });
-  const load = () => { if (!db) { db = store.get(KEY) || fresh(); } return db; };
+  const now = () => new Date().toISOString();
+  const err = m => ({ error: m });
+  const norm = s => String(s || '').replace(/\s+/g, ' ').trim();
+  const P = id => db.players.find(p => p.id === Number(id));
+  const alive = () => db.players.filter(p => p.alive).sort((a, b) => a.position - b.position);
+  const targetOf = id => { const me = P(id); const al = alive().filter(p => p.id !== me.id); if (!al.length) return null; return (al.find(p => p.position > me.position) || al[0]).id; };
+  const accessOk = c => !(db.game.join_code || '').trim() || norm(c) === db.game.join_code.trim();
+  const pinErr = (id, pin) => { const p = P(id); if (!p) return 'השחקן לא נמצא'; if (p.pin == null) return 'עוד לא נכנסת בפעם הראשונה. בחר את השם שלך וקוד חדש'; return p.pin === String(pin) ? null : 'קוד שגוי'; };
+  const modErr = (id, pin) => { const e = pinErr(id, pin); if (e) return e; const p = P(id); return p.is_manager && !p.blocked ? null : 'אין לך הרשאת מנהל'; };
+  const admErr = c => c === db.game.admin ? null : 'קוד מדריך שגוי';
+  const addName = n => {
+    const name = norm(n);
+    if (name.length < 2 || name.length > 30) return err('השם צריך להיות בין 2 ל-30 תווים');
+    if (db.players.some(p => p.name.toLowerCase() === name.toLowerCase())) return err(`השם "${name}" כבר ברשימה`);
+    const id = ++db.seq.p;
+    db.players.push({ id, name, pin: null, claimed_at: null, position: Math.max(0, ...db.players.map(p => p.position)) + 1, alive: true, caught_by: null, caught_at: null, is_manager: false, blocked: false, blocked_by: null });
+    return { ok: true, id, name };
+  };
+  const load = () => {
+    if (db) return;
+    db = store.get(KEY);
+    if (!db) {
+      db = { game: { status: 'registration', title: 'משחק התופסת', join_code: '', admin: '1234', started_at: null, finished_at: null, winner_id: null }, players: [], catches: [], seq: { p: 0, c: 0 } };
+      ROSTER.forEach(addName);
+    }
+  };
   const save = () => {
     try { localStorage.setItem(KEY, JSON.stringify(db)); }
     catch (e) { db.catches.forEach(c => { if (c.status !== 'pending') c.photo = null; }); try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e2) {} }
   };
-  const now = () => new Date().toISOString();
-  const err = m => ({ error: m });
-  const P = id => db.players.find(p => p.id === Number(id));
-  const norm = s => String(s || '').replace(/\s+/g, ' ').trim();
-  const alive = () => db.players.filter(p => p.alive).sort((a, b) => a.position - b.position);
-  const targetOf = id => { const me = P(id); const al = alive().filter(p => p.id !== me.id); if (!al.length) return null; return (al.find(p => p.position > me.position) || al[0]).id; };
-  const pinErr = (id, pin) => { const p = P(id); if (!p) return 'השחקן לא נמצא'; return p.pin === String(pin) ? null : 'קוד שגוי'; };
-  const admErr = c => c === db.game.admin ? null : 'קוד מדריך שגוי';
   const checkFinish = () => {
     const al = alive(); const g = db.game;
     if (al.length === 1 && g.status === 'active') Object.assign(g, { status: 'finished', finished_at: now(), winner_id: al[0].id });
@@ -318,42 +340,46 @@ const demo = (() => {
     checkFinish();
     return { ok: true };
   };
-  const addPlayer = (name, pin) => {
-    name = norm(name);
-    if (name.length < 2 || name.length > 30) return err('השם צריך להיות בין 2 ל-30 תווים');
-    if (!/^[0-9]{4}$/.test(String(pin || ''))) return err('הקוד האישי צריך להיות 4 ספרות');
-    if (db.players.some(p => p.name.toLowerCase() === name.toLowerCase())) return err('השם הזה כבר רשום. אם זה אתה, היכנס עם הקוד שלך');
-    const id = ++db.seq.p;
-    db.players.push({ id, name, pin: String(pin), position: Math.max(0, ...db.players.map(p => p.position)) + 1, alive: true, caught_by: null, caught_at: null });
-    return { ok: true, id, name };
+  const info = () => [...db.players].sort((a, b) => a.position - b.position).map(p => ({
+    id: p.id, claimed: p.pin != null, claimed_at: p.claimed_at, is_manager: p.is_manager, blocked: p.blocked, blocked_by: p.blocked_by, locked: false,
+    rejected: db.catches.filter(c => c.catcher_id === p.id && c.status === 'rejected').length }));
+  const setBlocked = (id, on, by) => {
+    const p = P(id); if (!p) return;
+    Object.assign(p, { blocked: !!on, blocked_by: on ? by : null });
+    if (on) db.catches.forEach(c => { if (c.catcher_id === p.id && c.status === 'pending') Object.assign(c, { status: 'cancelled', resolved_by: 'blocked', resolved_at: now() }); });
   };
+  const release = id => { const p = P(id); if (p) Object.assign(p, { pin: null, claimed_at: null }); };
   const F = {
-    tag_state() {
+    tag_state({ p_join_code }) {
+      const g = db.game;
+      if (!accessOk(p_join_code)) return { locked: true, game: { status: g.status, title: g.title } };
       const al = alive(); const tmap = {};
       al.forEach((p, i) => { const t = al[(i + 1) % al.length]; tmap[p.id] = t.id === p.id ? null : t.id; });
       const cnt = id => db.catches.filter(c => c.catcher_id === id && c.status === 'confirmed').length;
-      const g = db.game;
       return {
-        game: { status: g.status, title: g.title, needs_code: !!(g.join_code || '').trim(), started_at: g.started_at, finished_at: g.finished_at, winner_id: g.winner_id },
-        players: [...db.players].sort((a, b) => a.position - b.position).map(p => ({ id: p.id, name: p.name, alive: p.alive, target_id: p.alive ? tmap[p.id] ?? null : null, caught_by: p.caught_by, caught_at: p.caught_at, catches: cnt(p.id) })),
+        game: { status: g.status, title: g.title, started_at: g.started_at, finished_at: g.finished_at, winner_id: g.winner_id },
+        players: [...db.players].sort((a, b) => a.position - b.position).map(p => ({ id: p.id, name: p.name, alive: p.alive, claimed: p.pin != null, target_id: p.alive ? tmap[p.id] ?? null : null, caught_by: p.caught_by, caught_at: p.caught_at, catches: cnt(p.id) })),
         feed: db.catches.filter(c => c.status === 'confirmed').sort((a, b) => b.resolved_at.localeCompare(a.resolved_at)).slice(0, 40).map(c => ({ catcher: P(c.catcher_id)?.name, target: P(c.target_id)?.name, at: c.resolved_at })),
         server_time: now()
       };
     },
-    tag_register({ p_name, p_pin, p_join_code }) {
-      if (db.game.status !== 'registration') return err('ההרשמה סגורה כי המשחק כבר התחיל. פנה למדריך');
-      if ((db.game.join_code || '').trim() && (p_join_code || '').trim() !== db.game.join_code.trim()) return err('קוד ההצטרפות לא נכון. בקש מהמדריך את הקישור');
-      return addPlayer(p_name, p_pin);
+    tag_claim({ p_id, p_pin, p_join_code }) {
+      if (!accessOk(p_join_code)) return err('קוד הגישה לא נכון. בקש מהמדריך את הקישור');
+      const p = P(p_id); if (!p) return err('השם לא נמצא ברשימה');
+      if (p.pin != null) return err('מישהו כבר נכנס עם השם הזה. אם זה השם שלך, פנה למנהל');
+      if (!/^[0-9]{4}$/.test(String(p_pin || ''))) return err('הקוד האישי צריך להיות 4 ספרות');
+      Object.assign(p, { pin: String(p_pin), claimed_at: now() });
+      return { ok: true, id: p.id, name: p.name };
     },
     tag_login({ p_id, p_pin }) { const e = pinErr(p_id, p_pin); return e ? err(e) : { ok: true, id: Number(p_id), name: P(p_id).name }; },
     tag_me({ p_id, p_pin }) {
       const e = pinErr(p_id, p_pin); if (e) return err(e);
       const me = P(p_id); const t = me.alive ? targetOf(me.id) : null;
       const out = db.catches.filter(c => c.catcher_id === me.id && c.target_id === t && ['pending', 'rejected'].includes(c.status)).sort((a, b) => b.id - a.id)[0];
-      const inc = db.catches.filter(c => c.target_id === me.id && c.status === 'pending').sort((a, b) => b.id - a.id)[0];
+      const inc = me.blocked ? null : db.catches.filter(c => c.target_id === me.id && c.status === 'pending').sort((a, b) => b.id - a.id)[0];
       return {
         ok: true,
-        me: { id: me.id, name: me.name, alive: me.alive, caught_at: me.caught_at, caught_by: P(me.caught_by)?.name || null, catches: db.catches.filter(c => c.catcher_id === me.id && c.status === 'confirmed').length },
+        me: { id: me.id, name: me.name, alive: me.alive, blocked: me.blocked, is_manager: me.is_manager, caught_at: me.caught_at, caught_by: P(me.caught_by)?.name || null, catches: db.catches.filter(c => c.catcher_id === me.id && c.status === 'confirmed').length },
         target: t ? { id: t, name: P(t).name } : null,
         outgoing: out ? { id: out.id, status: out.status, reason: out.reject_reason, resolved_by: out.resolved_by, created_at: out.created_at } : null,
         incoming: inc ? { id: inc.id, catcher: P(inc.catcher_id).name, photo: inc.photo, created_at: inc.created_at } : null
@@ -361,8 +387,10 @@ const demo = (() => {
     },
     tag_submit_catch({ p_id, p_pin, p_photo }) {
       const e = pinErr(p_id, p_pin); if (e) return err(e);
+      const me = P(p_id);
+      if (me.blocked) return err('החשבון שלך חסום. פנה למדריך');
       if (db.game.status !== 'active') return err('המשחק לא פעיל כרגע');
-      const me = P(p_id); if (!me.alive) return err('נתפסת, אז אתה כבר לא במשחק');
+      if (!me.alive) return err('נתפסת, אז אתה כבר לא במשחק');
       const t = targetOf(me.id); if (!t) return err('אין לך את מי לתפוס');
       if (!isImg(p_photo)) return err('התמונה לא תקינה או גדולה מדי');
       if (db.catches.some(c => c.catcher_id === me.id && c.status === 'pending')) return err('כבר שלחת תפיסה שמחכה לאישור');
@@ -376,6 +404,7 @@ const demo = (() => {
     },
     tag_respond({ p_id, p_pin, p_catch_id, p_confirm, p_reason }) {
       const e = pinErr(p_id, p_pin); if (e) return err(e);
+      if (P(p_id).blocked) return err('החשבון שלך חסום. פנה למדריך');
       const c = db.catches.find(x => x.id === Number(p_catch_id));
       if (!c || c.target_id !== Number(p_id)) return err('הבקשה לא נמצאה');
       if (c.status !== 'pending') return err('הבקשה הזאת כבר טופלה');
@@ -383,9 +412,22 @@ const demo = (() => {
       Object.assign(c, { status: 'rejected', resolved_by: 'target', resolved_at: now(), reject_reason: ['tie', 'no'].includes(p_reason) ? p_reason : 'no' });
       return { ok: true };
     },
+    tag_mod_state({ p_id, p_pin }) { const e = modErr(p_id, p_pin); return e ? err(e) : { ok: true, info: info() }; },
+    tag_mod_block({ p_id, p_pin, p_player_id, p_on }) {
+      const e = modErr(p_id, p_pin); if (e) return err(e);
+      if (Number(p_player_id) === Number(p_id)) return err('אי אפשר לחסום את עצמך');
+      if (P(p_player_id)?.is_manager) return err('רק המדריך יכול לחסום מנהל');
+      setBlocked(p_player_id, p_on, P(p_id).name); return { ok: true };
+    },
+    tag_mod_release({ p_id, p_pin, p_player_id }) {
+      const e = modErr(p_id, p_pin); if (e) return err(e);
+      if (Number(p_player_id) === Number(p_id)) return err('אי אפשר לשחרר את השם שלך');
+      if (P(p_player_id)?.is_manager) return err('רק המדריך יכול לשחרר שם של מנהל');
+      release(p_player_id); return { ok: true };
+    },
     tag_admin_state({ p_code }) {
       const e = admErr(p_code); if (e) return err(e);
-      return { ok: true, join_code: db.game.join_code || null, locked: [],
+      return { ok: true, join_code: db.game.join_code || null, info: info(),
         catches: [...db.catches].sort((a, b) => b.id - a.id).map(c => ({ id: c.id, catcher_id: c.catcher_id, target_id: c.target_id, catcher: P(c.catcher_id)?.name, target: P(c.target_id)?.name, status: c.status, reason: c.reject_reason, resolved_by: c.resolved_by, created_at: c.created_at, resolved_at: c.resolved_at, has_photo: !!c.photo })) };
     },
     tag_admin_photo({ p_code, p_catch_id }) { const e = admErr(p_code); if (e) return err(e); return { ok: true, photo: db.catches.find(c => c.id === Number(p_catch_id))?.photo || null }; },
@@ -405,7 +447,13 @@ const demo = (() => {
       if (db.game.status === 'registration') Object.assign(db.game, { status: 'active', started_at: now(), finished_at: null, winner_id: null });
       return { ok: true };
     },
-    tag_admin_add_player({ p_code, p_name, p_pin }) { const e = admErr(p_code); if (e) return err(e); const r = addPlayer(p_name, p_pin); checkFinish(); return r; },
+    tag_admin_add_player({ p_code, p_name }) { const e = admErr(p_code); if (e) return err(e); const r = addName(p_name); checkFinish(); return r; },
+    tag_admin_add_players({ p_code, p_names }) {
+      const e = admErr(p_code); if (e) return err(e);
+      let added = 0; const skipped = [];
+      String(p_names || '').split(/\r?\n/).forEach(l => { if (!l.trim()) return; const r = addName(l); r.error ? skipped.push(l.trim()) : added++; });
+      checkFinish(); return { ok: true, added, skipped };
+    },
     tag_admin_remove_player({ p_code, p_player_id }) {
       const e = admErr(p_code); if (e) return err(e);
       const id = Number(p_player_id);
@@ -422,11 +470,9 @@ const demo = (() => {
       const p = P(id); if (p) Object.assign(p, { alive: true, caught_by: null, caught_at: null });
       checkFinish(); return { ok: true };
     },
-    tag_admin_reset_pin({ p_code, p_player_id, p_pin }) {
-      const e = admErr(p_code); if (e) return err(e);
-      if (!/^[0-9]{4}$/.test(String(p_pin || ''))) return err('הקוד האישי צריך להיות 4 ספרות');
-      const p = P(p_player_id); if (p) p.pin = String(p_pin); return { ok: true };
-    },
+    tag_admin_release({ p_code, p_player_id }) { const e = admErr(p_code); if (e) return err(e); release(p_player_id); return { ok: true }; },
+    tag_admin_block({ p_code, p_player_id, p_on }) { const e = admErr(p_code); if (e) return err(e); setBlocked(p_player_id, p_on, 'מדריך'); return { ok: true }; },
+    tag_admin_set_manager({ p_code, p_player_id, p_on }) { const e = admErr(p_code); if (e) return err(e); const p = P(p_player_id); if (p) p.is_manager = !!p_on; return { ok: true }; },
     tag_admin_settings({ p_code, p_title, p_join_code }) {
       const e = admErr(p_code); if (e) return err(e);
       if (norm(p_title)) db.game.title = norm(p_title);
@@ -449,12 +495,6 @@ const demo = (() => {
       const e = admErr(p_code); if (e) return err(e);
       let n = 0; db.catches.forEach(c => { if (c.status !== 'pending' && c.photo) { c.photo = null; n++; } });
       return { ok: true, cleared: n };
-    },
-    tag_demo_seed({ p_code }) {
-      const e = admErr(p_code); if (e) return err(e);
-      ['נועם', 'מאיה', 'איתי', 'שירה', 'יונתן', 'תמר', 'עומר', 'נועה', 'אורי', 'ליה', 'רועי', 'הילה']
-        .forEach(n => addPlayer(n, '0000'));
-      checkFinish(); return { ok: true };
     }
   };
   return {
@@ -475,40 +515,49 @@ const S = {
   session: store.get('tofeset.session'),
   adminCode: sstore.get('tofeset.admin'),
   adminData: null,
-  authMode: 'register',
+  modData: null,
+  loginId: '',
   filter: 'all',
-  search: '',
+  search: '', aSearch: '', mSearch: '',
   loadErr: null
 };
 {
   const q = new URLSearchParams(location.search).get('join');
   if (q) store.set('tofeset.join', q);
 }
+const joinCode = () => store.get('tofeset.join') || null;
+const isManager = () => !!(S.me && S.me.me && S.me.me.is_manager && !S.me.me.blocked);
 
 async function refresh() {
-  const st = await rpc('tag_state');
+  if (S.tab === 'admin' && S.adminCode) await refreshAdmin();
+  const st = await rpc('tag_state', { p_join_code: joinCode() });
   if (st.error) { S.loadErr = st.error; } else { S.state = st; S.loadErr = null; }
   if (S.session) {
     const me = await rpc('tag_me', { p_id: S.session.id, p_pin: S.session.pin });
     if (me.error) {
-      if (!me.network && /קוד שגוי|לא נמצא/.test(me.error)) { logout(); toast('צריך להיכנס מחדש', 'err'); }
+      if (!me.network && /קוד שגוי|לא נמצא|עוד לא נכנסת/.test(me.error)) { logout(); toast('צריך להיכנס מחדש', 'err'); }
     } else S.me = me;
   }
-  if (S.tab === 'admin' && S.adminCode) await refreshAdmin();
+  if (S.tab === 'mod' && isManager()) await refreshMod();
   render();
 }
 async function refreshAdmin() {
   const a = await rpc('tag_admin_state', { p_code: S.adminCode });
-  if (a.error) { if (!a.network) { S.adminCode = null; sstore.set('tofeset.admin', null); toast(a.error, 'err'); } }
-  else S.adminData = a;
+  if (a.error) { if (!a.network) { S.adminCode = null; S.adminData = null; sstore.set('tofeset.admin', null); toast(a.error, 'err'); } return; }
+  S.adminData = a;
+  if (a.join_code && a.join_code !== joinCode()) store.set('tofeset.join', a.join_code);
 }
-function logout() { S.session = null; S.me = null; store.set('tofeset.session', null); }
+async function refreshMod() {
+  const m = await rpc('tag_mod_state', { p_id: S.session.id, p_pin: S.session.pin });
+  if (!m.error) S.modData = m;
+}
+function logout() { S.session = null; S.me = null; S.modData = null; store.set('tofeset.session', null); }
 
 /* ---------------------------------------------------------------- rendering */
 function setHTML(el, html) {
   if (el._html === html) return;
   const saved = {};
-  el.querySelectorAll('input[id],select[id]').forEach(i => { if (i.type !== 'file') saved[i.id] = i.value; });
+  el.querySelectorAll('input[id],select[id],textarea[id]').forEach(i => { if (i.type !== 'file') saved[i.id] = i.value; });
   const opened = [...el.querySelectorAll('details[id]')].filter(d => d.open).map(d => d.id);
   const a = document.activeElement; let fid = null, s1, s2;
   if (a && a.id && el.contains(a)) { fid = a.id; try { s1 = a.selectionStart; s2 = a.selectionEnd; } catch (e) {} }
@@ -520,25 +569,37 @@ function setHTML(el, html) {
 
 function render() {
   renderHeader();
-  setHTML($('#demo'), LIVE ? '' : `<div class="demo-bar">✨ מצב הדגמה: הנתונים נשמרים רק במכשיר הזה. קוד מדריך: <b>1234</b>, ילדי דוגמה עם קוד <b>0000</b></div>`);
+  setHTML($('#demo'), LIVE ? '' : `<div class="demo-bar">✨ מצב הדגמה: הנתונים נשמרים רק במכשיר הזה. קוד מדריך: <b>1234</b>. בכניסה הראשונה כל ילד בוחר קוד.</div>`);
   let html;
   if (!S.state) html = S.loadErr ? `<section class="card center"><h2>אין חיבור לשרת</h2><p class="muted">${esc(S.loadErr)}</p><button class="btn" data-act="reload">נסה שוב</button></section>` : '<div class="skeleton"></div>';
-  else html = S.tab === 'chain' ? chainView() : S.tab === 'rules' ? rulesView() : S.tab === 'admin' ? adminView() : meView();
+  else if (S.state.locked && S.tab !== 'admin') html = lockedView();
+  else if (S.state.locked) html = adminView();
+  else html = S.tab === 'chain' ? chainView() : S.tab === 'rules' ? rulesView() : S.tab === 'admin' ? adminView() : S.tab === 'mod' ? modView() : meView();
   setHTML($('#view'), html);
   const tabs = [['me', '🎯', 'המשחק שלי'], ['chain', '🔗', 'השרשרת'], ['rules', '📜', 'חוקים']];
-  if (S.tab === 'admin') tabs.push(['admin', '🛡️', 'מדריך']);
+  if (isManager() || S.tab === 'mod') tabs.push(['mod', '🛡️', 'ניהול']);
+  if (S.tab === 'admin') tabs.push(['admin', '👑', 'מדריך']);
   setHTML($('#tabs'), tabs.map(([k, i, l]) => `<a href="#${k}" class="${S.tab === k ? 'on' : ''}"><span class="i">${i}</span>${l}</a>`).join(''));
 }
 
 function renderHeader() {
   const g = S.state?.game; const ps = S.state?.players || [];
   const al = ps.filter(p => p.alive).length;
-  const chip = !g ? '' : g.status === 'registration' ? '<span class="chip reg">● הרשמה פתוחה</span>'
+  const chip = !g ? '' : g.status === 'registration' ? '<span class="chip reg">● לפני המשחק</span>'
     : g.status === 'active' ? '<span class="chip live">● המשחק פעיל</span>' : '<span class="chip end">🏆 המשחק נגמר</span>';
-  const cnt = !g ? '' : g.status === 'registration' ? `${ps.length} נרשמו` : `${al} מתוך ${ps.length} במשחק`;
+  const cnt = !g || !ps.length ? '' : g.status === 'registration' ? `${ps.length} ברשימה` : `${al} מתוך ${ps.length} במשחק`;
   setHTML($('#hdr'), `<div class="logo">${LOGO}</div>
     <div class="brand"><div class="tribe">שכב״ג שחר</div><div class="title">${esc(g?.title || 'משחק התופסת')}</div></div>
     <div class="hdr-side">${chip}<div class="count">${cnt}</div></div>`);
+}
+
+function lockedView() {
+  return `<section class="card center"><div class="welcome-logo">${LOGO}</div>
+      <h1 class="gold-text">${esc(S.state.game.title)}</h1>
+      <p class="muted">כדי להיכנס צריך את הקישור מהמדריך, או את קוד הגישה.</p></section>
+    <section class="card"><form data-form="access" autocomplete="off"><label>קוד גישה<input id="x-code" autocomplete="off"></label>
+      <button class="btn gold xl" type="submit">המשך</button></form></section>
+    <div class="foot"><a class="link" href="#admin">כניסת מדריכים</a></div>`;
 }
 
 function winnerCard() {
@@ -558,13 +619,17 @@ function meView() {
   const me = m.me;
   const idx = ps.findIndex(p => p.id === me.id);
   const hunter = ps.find(p => p.alive && p.target_id === me.id);
-  let h = `<div class="hello"><div>היי, <b>${esc(me.name)}</b> 👋</div><button class="link" data-act="logout">יציאה</button></div>`;
+  let h = `<div class="hello"><div>היי, <b>${esc(me.name)}</b> 👋${me.is_manager ? ' <span class="tag">⭐ מנהל</span>' : ''}</div><button class="link" data-act="logout">יציאה</button></div>`;
+  if (me.blocked) {
+    return h + `<section class="card out"><div class="big-emoji">🚫</div><h2>החשבון שלך חסום</h2>
+      <p class="muted">${me.is_manager ? 'המדריך' : 'אחד המנהלים'} חסם את החשבון. אם זו טעות, פנה למדריך.</p></section>`;
+  }
   if (m.incoming) h += incomingCard(m.incoming);
   if (g.status === 'finished') h += winnerCard();
   if (g.status === 'registration') {
-    h += `<section class="card center"><div class="big-emoji">✅</div><h2>אתה רשום למשחק!</h2>
-      <p>אתה מספר <b class="gold">${idx + 1}</b> ברשימה. המשחק יתחיל כשהמדריך יפתח אותו.</p>
-      ${m.target ? `<p class="muted small">לפי הרשימה עכשיו, תצטרך לתפוס את <b class="gold">${esc(m.target.name)}</b>. זה עוד יכול להשתנות אם יירשמו עוד ילדים.</p>` : ''}</section>`;
+    h += `<section class="card center"><div class="big-emoji">✅</div><h2>אתה ברשימה!</h2>
+      <p>אתה מספר <b class="gold">${idx + 1}</b> מתוך ${ps.length}. המשחק יתחיל כשהמדריך יפתח אותו.</p>
+      ${m.target ? `<p class="muted small">כשהמשחק יתחיל, תצטרך לתפוס את <b class="gold">${esc(m.target.name)}</b>.</p>` : ''}</section>`;
   } else if (me.alive && g.status === 'active') {
     h += targetCard(m);
   } else if (!me.alive) {
@@ -618,33 +683,26 @@ function incomingCard(i) {
 
 function authView() {
   const g = S.state.game;
-  const regOpen = g.status === 'registration';
-  const mode = regOpen ? S.authMode : 'login';
   const names = [...S.state.players].sort((a, b) => a.name.localeCompare(b.name, 'he'));
-  const needCode = g.needs_code && !store.get('tofeset.join');
-  const sub = regOpen ? 'נרשמים, מקבלים מטרה, ותופסים!' : g.status === 'active' ? 'המשחק כבר רץ! נכנסים עם השם והקוד האישי' : 'המשחק נגמר. אפשר להיכנס ולראות איך הלך';
-  const reg = `<form data-form="register" autocomplete="off">
-      <label>השם שלך<input id="r-name" maxlength="30" placeholder="שם ושם משפחה" autocomplete="off"></label>
-      <div class="row2">
-        <label>קוד אישי (4 ספרות)<input id="r-pin" class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password"></label>
-        <label>שוב את הקוד<input id="r-pin2" class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password"></label>
-      </div>
-      ${needCode ? `<label>קוד הצטרפות מהמדריך<input id="r-join" autocomplete="off"></label>` : ''}
-      <p class="muted small">🔒 את הקוד שומרים בסוד. איתו נכנסים לאתר ומאשרים תפיסות.</p>
-      <button class="btn gold xl" type="submit">הצטרפות למשחק</button></form>`;
-  const login = names.length ? `<form data-form="login">
-      <label>מי אתה?<select id="l-id"><option value="">בחר את השם שלך</option>${names.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></label>
-      <label>הקוד האישי שלך<input id="l-pin" class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password"></label>
+  const sel = S.state.players.find(p => p.id === Number(S.loginId));
+  const sub = g.status === 'registration' ? 'בוחרים את השם שלך ונכנסים. המשחק יתחיל בקרוב!'
+    : g.status === 'active' ? 'המשחק רץ! בוחרים את השם שלך ונכנסים' : 'המשחק נגמר. אפשר להיכנס ולראות איך הלך';
+  let form = `<form data-form="${sel && !sel.claimed ? 'claim' : 'login'}" autocomplete="off">
+    <label>מי אתה?<select id="l-id"><option value="">בחר את השם שלך</option>${names.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></label>`;
+  if (!sel) form += `<p class="muted small">לא מוצא את השם שלך? פנה למדריך.</p>`;
+  else if (!sel.claimed) form += `<div class="notice ok">👋 פעם ראשונה? בחר קוד אישי בן 4 ספרות. איתו תיכנס מעכשיו.</div>
+      <div class="row2"><label>קוד אישי חדש<input id="c-pin" class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password"></label>
+      <label>שוב את הקוד<input id="c-pin2" class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password"></label></div>
+      <p class="muted small">🔒 שומרים את הקוד בסוד. מי שיודע אותו יכול להיכנס בשמך.</p>
+      <button class="btn gold xl" type="submit">אני ${esc(sel.name)}, כניסה</button>`;
+  else form += `<label>הקוד האישי שלך<input id="l-pin" class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password"></label>
       <button class="btn gold xl" type="submit">כניסה</button>
-      <p class="muted small center">שכחת את הקוד? המדריך יכול לאפס אותו.</p></form>`
-    : `<p class="empty">עוד אף אחד לא נרשם</p>`;
+      <p class="muted small center">שכחת את הקוד? מנהל או מדריך יכולים לשחרר את השם שלך, ואז בוחרים קוד חדש.</p>`;
+  form += '</form>';
   return `<section class="card center"><div class="welcome-logo">${LOGO}</div>
       <h1 class="gold-text">${esc(g.title)}</h1><p class="muted">${sub}</p></section>
     ${g.status === 'finished' ? winnerCard() : ''}
-    <section class="card">
-      ${regOpen ? `<div class="seg"><button class="${mode === 'register' ? 'on' : ''}" data-act="mode" data-mode="register">פעם ראשונה? הרשמה</button><button class="${mode === 'login' ? 'on' : ''}" data-act="mode" data-mode="login">כבר נרשמתי</button></div>` : ''}
-      ${mode === 'register' ? reg : login}
-    </section>
+    <section class="card">${names.length ? form : '<p class="empty">הרשימה עוד ריקה</p>'}</section>
     <div class="foot"><a class="link" href="#admin">כניסת מדריכים</a></div>`;
 }
 
@@ -670,8 +728,8 @@ function chainView() {
         <div class="who"><div class="nm">${esc(p.name)}${p.id === meId ? ' <span class="you">(אני)</span>' : ''}</div><div class="sub">${sub}</div></div>
         ${p.catches ? `<span class="badge">🏅 ${p.catches}</span>` : ''}</li>`;
     }).join('')}</ul>${!q && S.filter === 'all' && ps.length > 1 ? '<div class="loop">↺ האחרון ברשימה תופס את הראשון</div>' : ''}`
-    : `<p class="empty">${ps.length ? 'לא נמצאו ילדים' : 'עוד אף אחד לא נרשם'}</p>`;
-  return `${podium}${fd}<section class="card"><h3>🔗 השרשרת ${g.status === 'registration' ? '(לפי סדר ההרשמה)' : ''}</h3>
+    : `<p class="empty">${ps.length ? 'לא נמצאו ילדים' : 'הרשימה עוד ריקה'}</p>`;
+  return `${podium}${fd}<section class="card"><h3>🔗 השרשרת</h3>
     <div class="tools"><input id="c-search" type="search" placeholder="חיפוש שם…" autocomplete="off">
       <div class="chips"><button class="${S.filter === 'all' ? 'on' : ''}" data-act="filter" data-f="all">כולם</button><button class="${S.filter === 'alive' ? 'on' : ''}" data-act="filter" data-f="alive">במשחק</button></div></div>
     ${list}</section>`;
@@ -681,7 +739,7 @@ function rulesView() {
   return `<section class="card tie-rule"><div class="ico">🧣</div><div><h2 class="gold-text">חוק העניבה</h2>
       <p>מי שחובש את עניבת הצופים, <b>אי אפשר לתפוס אותו!</b></p></div></section>
     <section class="card"><h3>📜 חוקי המשחק</h3><ol class="rules">
-      <li>כל אחד תופס את מי שבא אחריו ברשימה (לפי סדר ההרשמה). האחרון תופס את הראשון.</li>
+      <li>כל אחד תופס את מי שבא אחריו ברשימה. האחרון תופס את הראשון.</li>
       <li>תפסת? מצלמים את מי שתפסת דרך האתר. התמונה היא ההוכחה, וצריך לראות בה שאין עניבה.</li>
       <li>מי שנתפס מקבל הודעה באתר ומאשר שנתפס. אחרי האישור הוא יוצא מהמשחק.</li>
       <li>מי שתפס מקבל את המטרה של מי שנתפס, וממשיך לרדוף.</li>
@@ -689,23 +747,62 @@ function rulesView() {
       <li>יש מחלוקת? המדריך רואה את התמונה ומכריע.</li>
       <li>מי שנשאר אחרון במשחק מנצח! 🏆</li>
     </ol></section>
+    <section class="card"><h3>🚫 בלי ספאם</h3><p>מי ששולח תמונות לא אמיתיות או מציק, המנהלים יכולים לחסום אותו.</p></section>
     <section class="card"><h3>🔒 הקוד האישי</h3><p>את הקוד שלך לא מספרים לאף אחד. מי שיודע אותו יכול להיכנס בשמך ולאשר שנתפסת.</p></section>`;
 }
 
+/* people list shared by the managers tab and the counselor screen */
+function peopleList(kind) {
+  const data = kind === 'admin' ? S.adminData : S.modData;
+  const info = Object.fromEntries((data.info || []).map(i => [i.id, i]));
+  const ps = S.state.players; const byId = Object.fromEntries(ps.map(p => [p.id, p]));
+  const g = S.state.game;
+  const q = (kind === 'admin' ? S.aSearch : S.mSearch).trim();
+  const rows = ps.map((p, i) => ({ ...p, n: i + 1, inf: info[p.id] || {} })).filter(p => !q || p.name.includes(q));
+  if (!rows.length) return `<p class="empty">${ps.length ? 'לא נמצאו ילדים' : 'הרשימה ריקה'}</p>`;
+  return `<ul class="alist">${rows.map(p => {
+    const bits = [p.inf.claimed ? 'נכנס/ה' : 'עוד לא נכנס/ה'];
+    if (g.status !== 'registration') bits.push(p.alive ? 'במשחק' : 'נתפס/ה ע״י ' + esc(byId[p.caught_by]?.name || '—'));
+    if (p.inf.rejected) bits.push(`${p.inf.rejected} תפיסות נדחו`);
+    if (p.inf.locked) bits.push('🔒 ננעל');
+    if (p.inf.blocked && p.inf.blocked_by) bits.push('נחסם ע״י ' + esc(p.inf.blocked_by));
+    return `<li class="arow"><span class="num">${p.n}</span>
+      <div class="who"><div class="nm">${esc(p.name)}${p.inf.is_manager ? '<span class="tag">⭐ מנהל</span>' : ''}${p.inf.blocked ? '<span class="tag red">🚫 חסום</span>' : ''}</div>
+      <div class="sub">${bits.join(' · ')}</div></div>
+      <div class="acts"><button data-act="person" data-kind="${kind}" data-id="${p.id}">פעולות</button></div></li>`;
+  }).join('')}</ul>`;
+}
+
+function modView() {
+  if (!isManager()) return `<section class="card center"><h2>אין הרשאת מנהל</h2><p class="muted">רק מי שהמדריך הגדיר כמנהל רואה את המסך הזה.</p></section>`;
+  if (!S.modData) return '<div class="skeleton"></div>';
+  const info = S.modData.info || [];
+  const blocked = info.filter(i => i.blocked).length;
+  return `<div class="hello"><div>🛡️ <b>ניהול</b></div></div>
+    <section class="card"><p class="muted small">אפשר לחסום מי שעושה ספאם (למשל שולח תמונות לא אמיתיות), ולשחרר שם שמישהו אחר נכנס איתו. ילד ששחררו לו את השם נכנס שוב ובוחר קוד חדש.</p>
+      <div class="stats-row" style="margin:10px 0 0"><div class="stat"><div class="n">${info.filter(i => i.claimed).length}</div><div class="l">נכנסו</div></div>
+      <div class="stat"><div class="n">${info.length - info.filter(i => i.claimed).length}</div><div class="l">עוד לא נכנסו</div></div>
+      <div class="stat"><div class="n">${blocked}</div><div class="l">חסומים</div></div></div></section>
+    <section class="card"><div class="tools"><input id="m-search" type="search" placeholder="חיפוש שם…" autocomplete="off"></div>${peopleList('mod')}</section>`;
+}
+
 function adminView() {
-  if (!S.adminCode) return `<section class="card"><h2>🛡️ כניסת מדריכים</h2>
+  if (!S.adminCode) return `<section class="card"><h2>👑 כניסת מדריכים</h2>
       <form data-form="admin-login"><label>קוד מדריך<input id="a-code" type="password" autocomplete="current-password"></label>
       <button class="btn gold xl" type="submit">כניסה</button></form>
       ${LIVE ? '' : '<p class="muted small">במצב הדגמה הקוד הוא 1234</p>'}</section>`;
   const A = S.adminData;
-  if (!A) return '<div class="skeleton"></div>';
+  if (!A || !S.state || S.state.locked) return '<div class="skeleton"></div>';
   const { game: g, players: ps } = S.state;
   const byId = Object.fromEntries(ps.map(p => [p.id, p]));
+  const info = A.info || [];
+  const managers = info.filter(i => i.is_manager).map(i => byId[i.id]?.name).filter(Boolean);
+  const claimed = info.filter(i => i.claimed).length;
   const pend = A.catches.filter(c => c.status === 'pending');
   const disputed = A.catches.filter(c => c.status === 'rejected' && c.resolved_by === 'target' && byId[c.target_id]?.alive && byId[c.catcher_id]?.alive).slice(0, 15);
   const base = location.origin + location.pathname;
   const link = base + (A.join_code ? '?join=' + encodeURIComponent(A.join_code) : '');
-  const wa = 'https://wa.me/?text=' + encodeURIComponent(`🏃 משחק התופסת של שכב״ג שחר!\nנרשמים כאן:\n${link}`);
+  const wa = 'https://wa.me/?text=' + encodeURIComponent(`🏃 משחק התופסת של שכב״ג שחר!\nנכנסים כאן, בוחרים את השם שלך ומתחילים:\n${link}`);
   const reasonTxt = c => c.reason === 'tie' ? '🧣 טוען/ת שהייתה עניבה' : 'טוען/ת שלא נתפס/ה';
   const catchRow = (c, disp) => `<li class="arow"><div class="who"><div class="nm">${esc(c.catcher)} ← ${esc(c.target)}</div>
       <div class="sub">${disp ? reasonTxt(c) : 'מחכה לאישור של ' + esc(c.target)} · ${ago(c.created_at)}</div></div>
@@ -714,37 +811,40 @@ function adminView() {
       ${disp ? '' : `<button class="danger" data-act="a-resolve" data-id="${c.id}" data-v="0">דחה</button>`}</div></li>`;
   const stLabel = { pending: 'ממתין', confirmed: 'אושר', rejected: 'נדחה', cancelled: 'בוטל' };
   const control = g.status === 'registration'
-    ? `<p>${ps.length} ילדים נרשמו. כשכולם בפנים, מתחילים. הסדר נשאר לפי סדר ההרשמה.</p><button class="btn gold xl" data-act="a-start">▶ התחלת המשחק</button>`
+    ? `<p><b class="gold">${claimed}</b> מתוך ${ps.length} כבר נכנסו לאתר. מי שלא נכנס עדיין נמצא בשרשרת, ויוכל להיכנס גם אחרי ההתחלה.</p><button class="btn gold xl" data-act="a-start">▶ התחלת המשחק</button>`
     : g.status === 'active'
-      ? `<p>המשחק רץ: <b class="gold">${ps.filter(p => p.alive).length}</b> מתוך ${ps.length} עדיין במשחק.</p>`
+      ? `<p>המשחק רץ: <b class="gold">${ps.filter(p => p.alive).length}</b> מתוך ${ps.length} עדיין במשחק. ${claimed} נכנסו לאתר.</p>`
       : `${winnerCard()}`;
-  return `<div class="hello"><div>🛡️ <b>מצב מדריך</b></div><button class="link" data-act="a-logout">יציאה</button></div>
+  return `<div class="hello"><div>👑 <b>מצב מדריך</b></div><button class="link" data-act="a-logout">יציאה</button></div>
     <section class="card"><h3>מצב המשחק</h3>${control}</section>
-    ${pend.length ? `<section class="card"><h3>⏳ תפיסות שמחכות (${pend.length})</h3><ul class="alist">${pend.map(c => catchRow(c, false)).join('')}</ul></section>` : ''}
+    ${pend.length ? `<section class="card"><h3>⏳ תפיסות שמחכות (${pend.length})</h3><p class="muted small">אפשר לאשר גם בלי הנתפס, למשל כשהוא חסום או לא עונה.</p><ul class="alist">${pend.map(c => catchRow(c, false)).join('')}</ul></section>` : ''}
     ${disputed.length ? `<section class="card"><h3>⚖️ מחלוקות</h3><p class="muted small">הנתפס דחה. אפשר לראות את התמונה ולאשר בכל זאת.</p><ul class="alist">${disputed.map(c => catchRow(c, true)).join('')}</ul></section>` : ''}
     <section class="card"><h3>📣 קישור לילדים</h3><div class="share">${esc(link)}</div>
+      ${A.join_code ? '' : '<p class="muted small">💡 כדאי לקבוע קוד גישה בהגדרות, כדי שרק מי שיש לו את הקישור יראה את השמות.</p>'}
       <div class="btn-row"><button class="btn small" data-act="a-copy" data-link="${esc(link)}">העתקה</button><a class="btn small gold" href="${esc(wa)}" target="_blank" rel="noopener">שליחה בוואטסאפ</a></div></section>
-    <section class="card"><h3>👥 ילדים (${ps.length})</h3>
-      <form data-form="a-add" autocomplete="off"><div class="row2"><label>שם<input id="a-name" maxlength="30" autocomplete="off"></label><label>קוד (4 ספרות)<input id="a-pin" class="pin" inputmode="numeric" maxlength="4" autocomplete="off"></label></div>
-      <button class="btn small" type="submit">➕ הוספת ילד לסוף הרשימה</button></form>
-      <ul class="alist" style="margin-top:10px">${ps.map((p, i) => `<li class="arow"><span class="num">${i + 1}</span>
-        <div class="who"><div class="nm">${esc(p.name)}</div><div class="sub">${p.alive ? (g.status === 'registration' ? 'רשום' : 'במשחק') : 'נתפס/ה ע״י ' + esc(byId[p.caught_by]?.name || '—')}${(A.locked || []).includes(p.id) ? ' · 🔒 ננעל' : ''}</div></div>
-        <div class="acts">${p.alive ? '' : `<button data-act="a-revive" data-id="${p.id}">החזר</button>`}<button data-act="a-pin" data-id="${p.id}">קוד</button><button class="danger" data-act="a-remove" data-id="${p.id}">מחק</button></div></li>`).join('')}</ul>
-      ${!LIVE && !ps.length ? '<button class="btn small" data-act="a-seed">טעינת 12 ילדים לדוגמה</button>' : ''}</section>
+    <section class="card"><h3>👥 הרשימה (${ps.length})</h3>
+      <p class="small">⭐ מנהלים: ${managers.length ? managers.map(n => `<b class="gold">${esc(n)}</b>`).join(', ') : '<span class="muted">עוד אין. לוחצים "פעולות" ליד שם ובוחרים "הפיכה למנהל"</span>'}</p>
+      <div class="tools"><input id="a-search" type="search" placeholder="חיפוש שם…" autocomplete="off"></div>
+      ${peopleList('admin')}</section>
+    <details class="card" id="d-add"><summary>➕ הוספת ילדים</summary>
+      <form data-form="a-add" autocomplete="off"><label>שם אחד<input id="a-name" maxlength="30" autocomplete="off"></label>
+      <button class="btn small" type="submit">הוספה לסוף הרשימה</button></form>
+      <form data-form="a-bulk" style="margin-top:16px"><label>הרבה שמות, שם בכל שורה<textarea id="a-bulk" placeholder="שם ראשון&#10;שם שני&#10;שם שלישי"></textarea></label>
+      <button class="btn small" type="submit">הוספת כל השמות לפי הסדר</button></form></details>
     <details class="card" id="d-hist"><summary>📋 כל התפיסות (${A.catches.length})</summary><ul class="alist">
-      ${A.catches.map(c => `<li class="arow"><div class="who"><div class="nm">${esc(c.catcher)} ← ${esc(c.target)}</div><div class="sub">${ago(c.created_at)}${c.reason ? ' · ' + reasonTxt(c) : ''}</div></div>
+      ${A.catches.map(c => `<li class="arow"><div class="who"><div class="nm">${esc(c.catcher)} ← ${esc(c.target)}</div><div class="sub">${ago(c.created_at)}${c.reason ? ' · ' + reasonTxt(c) : ''}${c.resolved_by === 'blocked' ? ' · בוטל בחסימה' : ''}</div></div>
         <span class="st ${c.status}">${stLabel[c.status]}</span>${c.has_photo ? `<div class="acts"><button data-act="a-photo" data-id="${c.id}">📷</button></div>` : ''}</li>`).join('') || '<p class="empty">אין עדיין תפיסות</p>'}
     </ul></details>
     <details class="card" id="d-set"><summary>⚙️ הגדרות</summary>
       <form data-form="a-settings"><label>שם המשחק<input id="s-title" value="${esc(g.title)}" maxlength="40"></label>
-      <label>קוד הצטרפות (לא חובה)<input id="s-join" value="${esc(A.join_code || '')}" maxlength="20" autocomplete="off"></label>
-      <p class="muted small">כשיש קוד, רק מי שקיבל את הקישור (או את הקוד) יכול להירשם.</p>
+      <label>קוד גישה לאתר (מומלץ)<input id="s-join" value="${esc(A.join_code || '')}" maxlength="20" autocomplete="off"></label>
+      <p class="muted small">בלי הקוד אי אפשר לראות את השמות באתר. הקוד נכנס לבד מהקישור לילדים.</p>
       <button class="btn small" type="submit">שמירה</button></form>
       <form data-form="a-code" style="margin-top:16px"><label>קוד מדריך חדש<input id="s-newcode" type="password" autocomplete="new-password"></label>
       <button class="btn small" type="submit">החלפת קוד מדריך</button></form></details>
     <details class="card" id="d-reset"><summary>🧹 ניקוי ואיפוס</summary>
       <button class="btn small" data-act="a-clear-photos">מחיקת כל התמונות של תפיסות שטופלו</button>
-      <button class="btn small" data-act="a-reset" data-keep="1">סבב חדש עם אותם ילדים</button>
+      <button class="btn small" data-act="a-reset" data-keep="1">סבב חדש עם אותה רשימה</button>
       <button class="btn small danger" data-act="a-reset" data-keep="0">איפוס מלא: מחיקת כל הרשימה</button></details>`;
 }
 
@@ -769,6 +869,19 @@ function ask({ title, text = '', ok = 'אישור', cancel = 'ביטול', dange
       closeModal(); res(b.dataset.m === 'ok' ? v : null);
     });
     if (input) setTimeout(() => sheet.querySelector('#m-input')?.focus(), 60);
+  });
+}
+function choose(title, sub, options) {
+  return new Promise(res => {
+    const sheet = openModal(`<h3>${title}</h3>${sub ? `<p class="muted small">${sub}</p>` : ''}<div class="btn-col">
+      ${options.map(([k, l, c]) => `<button class="btn ${c || ''}" data-m="${k}">${l}</button>`).join('')}
+      <button class="btn ghost" data-m="">סגירה</button></div>`);
+    const bd = sheet.parentElement;
+    bd.addEventListener('click', e => {
+      const b = e.target.closest('[data-m]');
+      if (e.target !== bd && !b) return;
+      closeModal(); res(b ? b.dataset.m || null : null);
+    });
   });
 }
 function showPhoto(src) {
@@ -821,15 +934,51 @@ async function busy(btn, fn) {
 }
 const val = id => (document.getElementById(id)?.value || '').trim();
 const adm = (fn, args = {}) => rpc(fn, { p_code: S.adminCode, ...args });
+const mod = (fn, args = {}) => rpc(fn, { p_id: S.session.id, p_pin: S.session.pin, ...args });
 async function done(r, okMsg) {
   if (r.error) { toast(r.error, 'err'); return false; }
   if (okMsg) toast(okMsg, 'ok');
   await refresh(); return true;
 }
 
+async function personActions(kind, id) {
+  const p = S.state.players.find(x => x.id === id); if (!p) return;
+  const data = kind === 'admin' ? S.adminData : S.modData;
+  const inf = (data?.info || []).find(i => i.id === id) || {};
+  const isAdmin = kind === 'admin';
+  const canTouch = isAdmin || (!inf.is_manager && S.session?.id !== id);
+  const opts = [];
+  if (canTouch) opts.push(inf.blocked ? ['unblock', '✅ ביטול חסימה'] : ['block', '🚫 חסימה (ספאם)', 'danger']);
+  if (canTouch && inf.claimed) opts.push(['release', '🔓 שחרור השם (ייכנס שוב עם קוד חדש)']);
+  if (isAdmin) {
+    opts.push(inf.is_manager ? ['unmanager', 'הסרת הרשאת מנהל'] : ['manager', '⭐ הפיכה למנהל']);
+    if (!p.alive) opts.push(['revive', '↩️ החזרה למשחק']);
+    opts.push(['remove', '🗑️ מחיקה מהרשימה', 'danger']);
+  }
+  if (!opts.length) { toast(inf.is_manager ? 'רק המדריך יכול לטפל במנהלים' : 'אין פעולות זמינות', 'err'); return; }
+  const status = [inf.claimed ? 'נכנס/ה לאתר' : 'עוד לא נכנס/ה', inf.blocked ? '🚫 חסום' : '', inf.is_manager ? '⭐ מנהל' : '', inf.rejected ? `${inf.rejected} תפיסות נדחו` : ''].filter(Boolean).join(' · ');
+  const k = await choose(esc(p.name), status, opts);
+  if (!k) return;
+  const n = esc(p.name);
+  if (k === 'block' || k === 'unblock') {
+    const on = k === 'block';
+    if (on && !(await ask({ title: `לחסום את ${n}?`, text: 'הוא/היא לא יוכל/תוכל לשלוח תפיסות או לאשר. תפיסה שמחכה תבוטל. אפשר לבטל את החסימה מתי שרוצים.', ok: 'חסימה', danger: true }))) return;
+    return done(isAdmin ? await adm('tag_admin_block', { p_player_id: id, p_on: on }) : await mod('tag_mod_block', { p_player_id: id, p_on: on }), on ? `${p.name} נחסם/ה` : 'החסימה בוטלה');
+  }
+  if (k === 'release') {
+    if (!(await ask({ title: `לשחרר את השם ${n}?`, text: 'מי שנכנס עם השם הזה ייצא. הילד/ה האמיתי/ת ייכנס/תיכנס שוב ויבחר/תבחר קוד חדש.', ok: 'שחרור' }))) return;
+    return done(isAdmin ? await adm('tag_admin_release', { p_player_id: id }) : await mod('tag_mod_release', { p_player_id: id }), 'השם שוחרר');
+  }
+  if (k === 'manager' || k === 'unmanager') return done(await adm('tag_admin_set_manager', { p_player_id: id, p_on: k === 'manager' }), k === 'manager' ? `${p.name} מנהל/ת עכשיו ⭐` : 'ההרשאה הוסרה');
+  if (k === 'revive') return done(await adm('tag_admin_revive', { p_player_id: id }), 'הוחזר/ה למשחק');
+  if (k === 'remove') {
+    if (!(await ask({ title: `למחוק את ${n}?`, text: 'הילד/ה יוצא/ת מהרשימה לגמרי.', ok: 'מחיקה', danger: true }))) return;
+    return done(await adm('tag_admin_remove_player', { p_player_id: id }), 'נמחק/ה');
+  }
+}
+
 const ACT = {
   reload: () => refresh(),
-  mode: el => { S.authMode = el.dataset.mode; render(); },
   filter: el => { S.filter = el.dataset.f; render(); },
   logout: async () => { if (await ask({ title: 'לצאת מהחשבון?', text: 'כדי להיכנס שוב תצטרך את הקוד האישי.', ok: 'יציאה' })) { logout(); render(); } },
   catch: () => { const c = $('#cam'); c.value = ''; c.click(); },
@@ -843,60 +992,70 @@ const ACT = {
       await done(r, v === 'yes' ? 'כל הכבוד על משחק הוגן 👏' : 'התפיסה נדחתה');
     });
   },
+  person: el => personActions(el.dataset.kind, Number(el.dataset.id)),
   'a-logout': () => { S.adminCode = null; S.adminData = null; sstore.set('tofeset.admin', null); location.hash = '#me'; },
-  'a-start': async el => { if (await ask({ title: 'להתחיל את המשחק?', text: 'אחרי ההתחלה ההרשמה נסגרת (אפשר עדיין להוסיף ילדים ידנית).', ok: '▶ מתחילים' })) busy(el, async () => done(await adm('tag_admin_start'), 'המשחק התחיל! 🏃')); },
+  'a-start': async el => { if (await ask({ title: 'להתחיל את המשחק?', text: 'כל אחד יתחיל לרדוף אחרי מי שבא אחריו ברשימה.', ok: '▶ מתחילים' })) busy(el, async () => done(await adm('tag_admin_start'), 'המשחק התחיל! 🏃')); },
   'a-photo': async el => { const r = await adm('tag_admin_photo', { p_catch_id: Number(el.dataset.id) }); if (r.error) toast(r.error, 'err'); else showPhoto(r.photo); },
   'a-resolve': el => busy(el, async () => done(await adm('tag_admin_resolve', { p_catch_id: Number(el.dataset.id), p_confirm: el.dataset.v === '1' }), el.dataset.v === '1' ? 'התפיסה אושרה' : 'התפיסה נדחתה')),
-  'a-revive': async el => { const p = S.state.players.find(x => x.id === Number(el.dataset.id)); if (await ask({ title: `להחזיר את ${esc(p?.name)} למשחק?`, text: 'התפיסה שלו/ה מבוטלת והשרשרת מתעדכנת.', ok: 'החזרה' })) done(await adm('tag_admin_revive', { p_player_id: p.id }), 'הוחזר/ה למשחק'); },
-  'a-remove': async el => { const p = S.state.players.find(x => x.id === Number(el.dataset.id)); if (await ask({ title: `למחוק את ${esc(p?.name)}?`, text: 'הילד/ה יוצא/ת מהרשימה לגמרי.', ok: 'מחיקה', danger: true })) done(await adm('tag_admin_remove_player', { p_player_id: p.id }), 'נמחק/ה'); },
-  'a-pin': async el => {
-    const p = S.state.players.find(x => x.id === Number(el.dataset.id));
-    const pin = await ask({ title: `קוד חדש ל${esc(p?.name)}`, text: '4 ספרות. תמסור/י לילד/ה את הקוד החדש.', ok: 'שמירה', input: 'class="pin" inputmode="numeric" maxlength="4" autocomplete="off"' });
-    if (pin != null) done(await adm('tag_admin_reset_pin', { p_player_id: p.id, p_pin: pin.trim() }), 'הקוד עודכן');
-  },
   'a-copy': async el => { try { await navigator.clipboard.writeText(el.dataset.link); toast('הקישור הועתק', 'ok'); } catch (e) { toast('לא הצלחתי להעתיק. סמנו את הקישור והעתיקו ידנית', 'err'); } },
-  'a-clear-photos': async el => { if (await ask({ title: 'למחוק את כל התמונות?', text: 'נמחקות התמונות של תפיסות שכבר טופלו. התוצאות נשארות.', ok: 'מחיקה', danger: true })) { const r = await adm('tag_admin_clear_photos'); done(r, r.error ? '' : `נמחקו ${r.cleared} תמונות`); } },
+  'a-clear-photos': async () => { if (await ask({ title: 'למחוק את כל התמונות?', text: 'נמחקות התמונות של תפיסות שכבר טופלו. התוצאות נשארות.', ok: 'מחיקה', danger: true })) { const r = await adm('tag_admin_clear_photos'); done(r, r.error ? '' : `נמחקו ${r.cleared} תמונות`); } },
   'a-reset': async el => {
     const keep = el.dataset.keep === '1';
     const ans = await ask(keep
-      ? { title: 'סבב חדש?', text: 'כל הילדים חוזרים למשחק, התפיסות נמחקות, וחוזרים לשלב ההרשמה.', ok: 'סבב חדש' }
+      ? { title: 'סבב חדש?', text: 'כל הילדים חוזרים למשחק באותו סדר, עם אותם קודים. התפיסות נמחקות.', ok: 'סבב חדש' }
       : { title: 'איפוס מלא?', text: 'כל הרשימה, התפיסות והתמונות יימחקו. כדי לאשר, כתבו: מחק', ok: 'מחיקת הכול', danger: true, input: 'autocomplete="off"' });
     if (ans == null || (!keep && ans.trim() !== 'מחק')) { if (ans != null) toast('לא בוצע. צריך לכתוב: מחק', 'err'); return; }
     done(await adm('tag_admin_reset', { p_keep_players: keep }), keep ? 'סבב חדש מוכן' : 'הכול אופס');
-  },
-  'a-seed': el => busy(el, async () => done(await adm('tag_demo_seed'), 'נטענו ילדי דוגמה (קוד 0000)'))
+  }
 };
 
+function saveSession(r, pin) {
+  S.session = { id: r.id, name: r.name, pin }; store.set('tofeset.session', S.session); S.loginId = '';
+}
 const FORMS = {
-  async register(f, btn) {
-    const name = val('r-name'), pin = val('r-pin'), pin2 = val('r-pin2');
+  async claim() {
+    const id = Number(val('l-id')), pin = val('c-pin'), pin2 = val('c-pin2');
+    if (!/^[0-9]{4}$/.test(pin)) { toast('הקוד צריך להיות 4 ספרות', 'err'); return; }
     if (pin !== pin2) { toast('הקודים לא זהים', 'err'); return; }
-    const join = val('r-join') || store.get('tofeset.join') || '';
-    const r = await rpc('tag_register', { p_name: name, p_pin: pin, p_join_code: join });
-    if (r.error) { toast(r.error, 'err'); return; }
-    if (val('r-join')) store.set('tofeset.join', val('r-join'));
-    S.session = { id: r.id, name: r.name, pin }; store.set('tofeset.session', S.session);
-    toast(`ברוך הבא, ${r.name}! 🎉`, 'ok'); await refresh();
+    const r = await rpc('tag_claim', { p_id: id, p_pin: pin, p_join_code: joinCode() });
+    if (r.error) { toast(r.error, 'err'); await refresh(); return; }
+    saveSession(r, pin); toast(`ברוך הבא, ${r.name}! 🎉`, 'ok'); await refresh();
   },
   async login() {
     const id = Number(val('l-id')), pin = val('l-pin');
     if (!id) { toast('בחר את השם שלך', 'err'); return; }
     const r = await rpc('tag_login', { p_id: id, p_pin: pin });
     if (r.error) { toast(r.error, 'err'); return; }
-    S.session = { id: r.id, name: r.name, pin }; store.set('tofeset.session', S.session);
+    saveSession(r, pin); await refresh();
+  },
+  async access() {
+    store.set('tofeset.join', val('x-code'));
     await refresh();
+    if (S.state && S.state.locked) toast('קוד הגישה לא נכון', 'err');
   },
   async 'admin-login'() {
     const code = val('a-code');
     const r = await rpc('tag_admin_state', { p_code: code });
     if (r.error) { toast(r.error, 'err'); return; }
-    S.adminCode = code; S.adminData = r; sstore.set('tofeset.admin', code); render();
+    S.adminCode = code; S.adminData = r; sstore.set('tofeset.admin', code);
+    if (r.join_code) store.set('tofeset.join', r.join_code);
+    await refresh();
   },
   async 'a-add'() {
-    const ok = await done(await adm('tag_admin_add_player', { p_name: val('a-name'), p_pin: val('a-pin') }), 'נוסף/ה לרשימה');
-    if (ok) { ['a-name', 'a-pin'].forEach(id => { const i = document.getElementById(id); if (i) i.value = ''; }); }
+    const ok = await done(await adm('tag_admin_add_player', { p_name: val('a-name') }), 'נוסף/ה לסוף הרשימה');
+    if (ok) { const i = document.getElementById('a-name'); if (i) i.value = ''; }
   },
-  async 'a-settings'() { await done(await adm('tag_admin_settings', { p_title: val('s-title'), p_join_code: val('s-join') }), 'נשמר'); },
+  async 'a-bulk'() {
+    const r = await adm('tag_admin_add_players', { p_names: document.getElementById('a-bulk')?.value || '' });
+    if (r.error) { toast(r.error, 'err'); return; }
+    toast(`נוספו ${r.added} שמות` + (r.skipped.length ? `. דילגתי על: ${r.skipped.join(', ')}` : ''), 'ok');
+    const t = document.getElementById('a-bulk'); if (t) t.value = '';
+    await refresh();
+  },
+  async 'a-settings'() {
+    const ok = await done(await adm('tag_admin_settings', { p_title: val('s-title'), p_join_code: val('s-join') }), 'נשמר');
+    if (ok) store.set('tofeset.join', val('s-join') || null);
+  },
   async 'a-code'() {
     const nc = val('s-newcode');
     const r = await adm('tag_admin_set_code', { p_new_code: nc });
@@ -918,17 +1077,23 @@ document.addEventListener('submit', e => {
   busy(btn, () => FORMS[f.dataset.form]?.(f, btn));
 });
 document.addEventListener('input', e => {
-  if (e.target.id === 'c-search') { S.search = e.target.value; render(); }
+  const id = e.target.id;
+  if (id === 'c-search') { S.search = e.target.value; render(); }
+  if (id === 'a-search') { S.aSearch = e.target.value; render(); }
+  if (id === 'm-search') { S.mSearch = e.target.value; render(); }
   if (e.target.classList.contains('pin')) e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4);
+});
+document.addEventListener('change', e => {
+  if (e.target.id === 'l-id') { S.loginId = e.target.value; render(); }
 });
 
 /* ---------------------------------------------------------------- routing + polling */
 function route() {
   const h = (location.hash || '').replace('#', '');
-  S.tab = ['me', 'chain', 'rules', 'admin'].includes(h) ? h : 'me';
+  S.tab = ['me', 'chain', 'rules', 'admin', 'mod'].includes(h) ? h : 'me';
   window.scrollTo(0, 0);
   render();
-  if (S.tab === 'admin' && S.adminCode) refreshAdmin().then(render);
+  if ((S.tab === 'admin' && S.adminCode) || S.tab === 'mod') refresh();
 }
 window.addEventListener('hashchange', route);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh(); });
