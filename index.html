@@ -1014,7 +1014,7 @@ function liveView() {
   const pairs = ps.filter(p => p.alive && p.target_id);
   const flash = S.flash && Date.now() - S.flash.t < 9000 ? S.flash : null;
   const medals = ['🥇', '🥈', '🥉', '4', '5'];
-  return `<div class="live-head"><h2 class="gold-text" style="margin:0">📺 ${esc(g.title)} · בשידור חי</h2><a class="link" href="#chain">יציאה</a></div>
+  return `<div class="live-head"><h2 style="margin:0">📺 <span class="gold-text">${esc(g.title)} · בשידור חי</span></h2><div><a class="live-link" href="#photos" style="float:none">📸 תמונות</a> <a class="link" href="#chain">יציאה</a></div></div>
     ${flash ? `<div class="live-flash">⚡ <b>${esc(flash.catcher)}</b> תפס/ה את <b>${esc(flash.target)}</b>!</div>` : ''}
     <div class="live-top">
       <div class="live-stat"><div class="n">${alive.length}</div><div class="l">עדיין במשחק</div></div>
