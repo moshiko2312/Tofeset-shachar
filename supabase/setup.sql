@@ -128,6 +128,19 @@ language sql stable set search_path = '' as $$
        order by p.position limit 1));
 $$;
 
+-- Who chases this player? The previous living player in list order (circular).
+create or replace function tag_private.hunter_of(p_id bigint) returns bigint
+language sql stable set search_path = '' as $$
+  select coalesce(
+    (select p.id from public.tag_players p
+       where p.alive and p.id <> p_id
+         and p.position < (select position from public.tag_players where id = p_id)
+       order by p.position desc limit 1),
+    (select p.id from public.tag_players p
+       where p.alive and p.id <> p_id
+       order by p.position desc limit 1));
+$$;
+
 -- Returns null when the code is right, otherwise an error message. Locks after 8 wrong tries.
 create or replace function tag_private.check_pin(p_id bigint, p_pin text) returns text
 language plpgsql set search_path = '' as $$
@@ -464,6 +477,38 @@ begin
   end if;
   insert into public.tag_catches (catcher_id, target_id, photo) values (p_id, v_target, p_photo);
   return jsonb_build_object('ok', true);
+end $$;
+
+-- "I was caught": the caught kid reports it with a photo. The kid chasing them gets the catch.
+create or replace function public.tag_self_caught(p_id bigint, p_pin text, p_photo text)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v_err text; g public.tag_game; me public.tag_players; v_hunter bigint; v_cid bigint; v_res jsonb;
+begin
+  select * into g from public.tag_game where id = 1 for update;
+  v_err := tag_private.check_pin(p_id, p_pin);
+  if v_err is not null then return tag_private.err(v_err); end if;
+  select * into me from public.tag_players where id = p_id;
+  if me.blocked then return tag_private.err('החשבון שלך חסום. פנה למדריך'); end if;
+  if g.status <> 'active' then return tag_private.err('המשחק לא פעיל כרגע'); end if;
+  if not me.alive then return tag_private.err('כבר יצאת מהמשחק'); end if;
+  if p_photo is null or p_photo !~ '^data:image/' or char_length(p_photo) > 1500000 then
+    return tag_private.err('צריך לצרף תמונה של התפיסה');
+  end if;
+  v_hunter := tag_private.hunter_of(p_id);
+  if v_hunter is null then return tag_private.err('אין מי שרודף אחריך'); end if;
+  select id into v_cid from public.tag_catches
+   where catcher_id = v_hunter and target_id = p_id and status = 'pending' limit 1;
+  if v_cid is not null then
+    update public.tag_catches set photo = coalesce(photo, p_photo) where id = v_cid;
+  else
+    update public.tag_catches set status = 'cancelled', resolved_by = 'system', resolved_at = now()
+     where catcher_id = v_hunter and status = 'pending';
+    insert into public.tag_catches (catcher_id, target_id, photo)
+    values (v_hunter, p_id, p_photo) returning id into v_cid;
+  end if;
+  v_res := tag_private.apply_catch(v_cid, 'self');
+  if v_res ? 'error' then return v_res; end if;
+  return jsonb_build_object('ok', true, 'catcher', (select name from public.tag_players where id = v_hunter));
 end $$;
 
 create or replace function public.tag_cancel_catch(p_id bigint, p_pin text)

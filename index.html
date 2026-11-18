@@ -140,6 +140,9 @@ body.is-live .wrap{padding-bottom:30px}
 .gitem .cap b{color:var(--gold-hi)}
 .gitem .t{color:var(--muted);font-size:12px}
 .gitem .del{position:absolute;top:8px;left:8px;width:34px;height:34px;border-radius:50%;border:none;background:rgba(0,0,0,.65);color:#fff;font-size:16px;cursor:pointer}
+.self-card{text-align:center;border-color:var(--line)}
+.self-card .btn{margin-top:8px}
+.link-btn{display:block;margin:10px auto 0;background:none;border:none;color:var(--gold-hi);text-decoration:underline;font-size:14.5px;cursor:pointer}
 .name-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;max-height:52vh;overflow:auto;padding:2px}
 .name-btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:9px 13px;font-size:16.5px;font-weight:500;cursor:pointer;color:var(--text)}
 .name-btn .av{width:26px;height:26px;font-size:12px;border-width:1px}
@@ -295,6 +298,8 @@ nav.tabs a.on .i{filter:none;opacity:1}
 <nav class="tabs"><div class="in" id="tabs"></div></nav>
 <input type="file" id="cam" accept="image/*" capture="environment" hidden>
 <input type="file" id="avfile" accept="image/*" hidden>
+<input type="file" id="camg" accept="image/*" hidden>
+<input type="file" id="selfpic" accept="image/*" hidden>
 <div id="modal-root"></div>
 <div id="toast"></div>
 
@@ -383,6 +388,7 @@ const demo = (() => {
   const norm = s => String(s || '').replace(/\s+/g, ' ').trim();
   const P = id => db.players.find(p => p.id === Number(id));
   const alive = () => db.players.filter(p => p.alive).sort((a, b) => a.position - b.position);
+  const hunterOf = id => { const me = P(id); const al = alive().filter(p => p.id !== me.id); if (!al.length) return null; return ([...al].reverse().find(p => p.position < me.position) || al[al.length - 1]).id; };
   const targetOf = id => { const me = P(id); const al = alive().filter(p => p.id !== me.id); if (!al.length) return null; return (al.find(p => p.position > me.position) || al[0]).id; };
   const accessOk = c => !(db.game.join_code || '').trim() || norm(c) === db.game.join_code.trim();
   const pinErr = (id, pin) => { const p = P(id); if (!p) return 'השחקן לא נמצא'; if (p.pin == null) return 'עוד לא נכנסת בפעם הראשונה. בחר את השם שלך וקוד חדש'; return p.pin === String(pin) ? null : 'קוד שגוי'; };
@@ -489,6 +495,24 @@ const demo = (() => {
       if (db.catches.some(c => c.catcher_id === me.id && c.status === 'pending')) return err('כבר שלחת תפיסה שמחכה לאישור');
       db.catches.push({ id: ++db.seq.c, catcher_id: me.id, target_id: t, photo: p_photo, status: 'pending', reject_reason: null, resolved_by: null, created_at: now(), resolved_at: null });
       return { ok: true };
+    },
+    tag_self_caught({ p_id, p_pin, p_photo }) {
+      const e = pinErr(p_id, p_pin); if (e) return err(e);
+      const me = P(p_id);
+      if (me.blocked) return err('החשבון שלך חסום. פנה למדריך');
+      if (db.game.status !== 'active') return err('המשחק לא פעיל כרגע');
+      if (!me.alive) return err('כבר יצאת מהמשחק');
+      if (!isImg(p_photo)) return err('צריך לצרף תמונה של התפיסה');
+      const h = hunterOf(me.id); if (!h) return err('אין מי שרודף אחריך');
+      let c = db.catches.find(x => x.catcher_id === h && x.target_id === me.id && x.status === 'pending');
+      if (c) c.photo = c.photo || p_photo;
+      else {
+        db.catches.forEach(x => { if (x.catcher_id === h && x.status === 'pending') Object.assign(x, { status: 'cancelled', resolved_by: 'system', resolved_at: now() }); });
+        c = { id: ++db.seq.c, catcher_id: h, target_id: me.id, photo: p_photo, status: 'pending', reject_reason: null, resolved_by: null, created_at: now(), resolved_at: null };
+        db.catches.push(c);
+      }
+      const r = apply(c.id, 'self'); if (r.error) return r;
+      return { ok: true, catcher: P(h).name };
     },
     tag_cancel_catch({ p_id, p_pin }) {
       const e = pinErr(p_id, p_pin); if (e) return err(e);
@@ -871,6 +895,10 @@ function meView() {
     <div class="stat"><div class="n">${me.catches}</div><div class="l">תפסת</div></div>
     <div class="stat"><div class="n">${idx + 1}</div><div class="l">מספר ברשימה</div></div>
     <div class="stat"><div class="n">${ps.filter(p => p.alive).length}</div><div class="l">נשארו במשחק</div></div></section>`;
+  if (me.alive && hunter && g.status === 'active' && !m.incoming)
+    h += `<section class="card self-card"><h3>🙋 כבר נתפסת?</h3>
+      <p class="muted small">אם ${esc(hunter.name)} תפס/ה אותך (גם לפני שהיה את האתר), מעלים את התמונה של התפיסה ויוצאים מהמשחק.</p>
+      <button class="btn" data-act="self-caught">🙋 נתפסתי, העלאת תמונה</button></section>`;
   if (me.alive && hunter && g.status === 'active')
     h += `<section class="card hunter">👀 מי רודף אחריך? ${avSrc(hunter.id) ? av(hunter) : ''} <b class="gold">${esc(hunter.name)}</b>
       <div class="muted small">עם עניבת צופים 🧣 אי אפשר לתפוס אותך</div></section>`;
@@ -896,6 +924,7 @@ function targetCard(m) {
       ? `<div class="pending"><div class="spinner"></div><div><b>מחכים לאישור של ${esc(t.name)}</b><div class="muted small">שלחת תמונה ${ago(o.created_at)}</div></div></div>
          <button class="btn ghost small" data-act="cancel-catch">ביטול ושליחת תמונה אחרת</button>`
       : `<button class="btn gold xl" data-act="catch">📸 תפסתי! צלם הוכחה</button>
+         <button class="link-btn" data-act="catch-gallery">📁 כבר יש לך תמונה? העלאה מהגלריה</button>
          <div class="tie-hint">🧣 את מי שחובש עניבת צופים אי אפשר לתפוס. בתמונה צריך לראות שאין עניבה</div>`}
   </section>`;
 }
@@ -1021,7 +1050,8 @@ function rulesView() {
       <li>כל אחד צריך לתפוס את מי שנמצא אחריו ברשימה, ולדאוג שלא ייתפס על ידי מי שלפניו.</li>
       <li>מי שנתפס נמחק מהרשימה, ומי שתפס אותו ממשיך לתפוס את מי שאחריו.</li>
       <li>האחרון ברשימה תופס את הראשון.</li>
-      <li>תפסת? מצלמים את התפיסה דרך האתר, ומי שנתפס מאשר. בלי צילום, התפיסה לא נחשבת.</li>
+      <li>תפסת? מצלמים את התפיסה דרך האתר (או מעלים תמונה מהגלריה), ומי שנתפס מאשר. בלי צילום, התפיסה לא נחשבת.</li>
+      <li>נתפסת והתפיסה לא נרשמה באתר? לוחצים <b>🙋 נתפסתי</b>, מעלים את התמונה, ויוצאים מהמשחק.</li>
       <li>הרשימה באתר מתעדכנת לבד אחרי כל תפיסה. כל אחד אחראי להתעדכן מי המטרה שלו.</li>
     </ol></section>
     <section class="card"><h3>💡 דוגמה</h3>
@@ -1253,7 +1283,7 @@ function compressImage(file, max, q) {
     img.src = url;
   });
 }
-$('#cam').addEventListener('change', async e => {
+async function onCatchFile(e) {
   const f = e.target.files && e.target.files[0]; if (!f) return;
   let data;
   try { data = await compressImage(f, LIVE ? 1000 : 640, LIVE ? 0.72 : 0.6); }
@@ -1271,6 +1301,37 @@ $('#cam').addEventListener('change', async e => {
     const r = await rpc('tag_submit_catch', { p_id: S.session.id, p_pin: S.session.pin, p_photo: data });
     closeModal();
     if (r.error) toast(r.error, 'err'); else toast(`נשלח! מחכים ש${t} יאשר`, 'ok');
+    refresh();
+  });
+}
+$('#cam').addEventListener('change', onCatchFile);
+$('#camg').addEventListener('change', onCatchFile);
+
+/* "I was caught": the caught kid uploads the photo and leaves the game */
+$('#selfpic').addEventListener('change', async e => {
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  let data;
+  try { data = await compressImage(f, LIVE ? 1000 : 640, LIVE ? 0.72 : 0.6); }
+  catch (err) { toast('לא הצלחתי לקרוא את התמונה', 'err'); return; }
+  const me = S.me?.me; const hunter = S.state.players.find(p => p.alive && p.target_id === me?.id);
+  const hn = esc(hunter?.name || '');
+  const sheet = openModal(`<h3>🙋 נתפסתי</h3><img class="proof" src="${data}" alt="">
+    <div class="notice warn" style="text-align:center"><b>שים לב: אחרי האישור אתה יוצא מהמשחק.</b><br>${hn} מקבל/ת את התפיסה ואת המטרה שלך.</div>
+    <div class="btn-col"><button class="btn danger" data-m="ok">כן, נתפסתי ע״י ${hn}. אני יוצא מהמשחק</button>
+    <button class="btn ghost" data-m="again">בחירת תמונה אחרת</button><button class="btn ghost" data-m="cancel">ביטול</button></div>`);
+  sheet.parentElement.addEventListener('click', async ev => {
+    const b = ev.target.closest('[data-m]');
+    if (ev.target === sheet.parentElement) { closeModal(); return; }
+    if (!b) return;
+    if (b.dataset.m === 'cancel') { closeModal(); return; }
+    if (b.dataset.m === 'again') { closeModal(); const i = $('#selfpic'); i.value = ''; i.click(); return; }
+    b.classList.add('busy'); b.disabled = true;
+    const r = await rpc('tag_self_caught', { p_id: S.session.id, p_pin: S.session.pin, p_photo: data });
+    if (r.error) { closeModal(); toast(r.error, 'err'); refresh(); return; }
+    const done2 = openModal(`<div class="center"><div class="big-emoji">😅</div><h3>יצאת מהמשחק</h3>
+      <p class="muted">${esc(r.catcher || hn)} קיבל/ה את התפיסה. תודה על משחק הוגן! 👏<br>אפשר להמשיך לעקוב בשרשרת 🔗</p></div>
+      <button class="btn gold" data-m="close">סגירה</button>`);
+    done2.parentElement.addEventListener('click', () => closeModal());
     refresh();
   });
 });
@@ -1425,6 +1486,13 @@ const ACT = {
   filter: el => { S.filter = el.dataset.f; render(); },
   logout: async () => { if (await ask({ title: 'לצאת מהחשבון?', text: 'כדי להיכנס שוב תצטרך את הקוד האישי.', ok: 'יציאה' })) { logout(); render(); } },
   catch: () => { const c = $('#cam'); c.value = ''; c.click(); },
+  'catch-gallery': () => { const c = $('#camg'); c.value = ''; c.click(); },
+  'self-caught': async () => {
+    const me = S.me?.me; const hunter = S.state.players.find(p => p.alive && p.target_id === me?.id);
+    const ok = await ask({ title: '🙋 נתפסת?', text: `אם ${esc(hunter?.name || '')} תפס/ה אותך, מעלים את התמונה של התפיסה. <b>אחרי האישור אתה יוצא מהמשחק.</b>`, ok: '📷 בחירת תמונה' });
+    if (!ok) return;
+    const i = $('#selfpic'); i.value = ''; i.click();
+  },
   'cancel-catch': (el) => busy(el, async () => done(await rpc('tag_cancel_catch', { p_id: S.session.id, p_pin: S.session.pin }), 'הבקשה בוטלה')),
   zoom: el => showPhoto(el.getAttribute('src')),
   respond: async el => {
