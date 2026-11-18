@@ -103,6 +103,29 @@ textarea:focus{border-color:var(--gold)}
 details.pin-box{margin-top:14px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px}
 details.pin-box summary{cursor:pointer;font-weight:700}
 .podium .av{margin:4px auto}
+.node .nm{font-size:18px}
+.node .sub{font-size:16px;color:var(--text2);margin-top:2px}
+.node .sub b{color:var(--gold-hi);font-weight:700;font-size:17px}
+.live-link{float:left;font-size:14px;font-weight:500;color:var(--gold-hi);text-decoration:none;border:1px solid rgba(212,175,55,.45);border-radius:99px;padding:3px 10px}
+.live-top{display:flex;gap:12px;margin-bottom:14px}
+.live-stat{flex:1;text-align:center;background:linear-gradient(180deg,var(--card-a),var(--card-b));border:1px solid rgba(212,175,55,.25);border-radius:18px;padding:14px 6px}
+.live-stat .n{font-size:clamp(36px,8vw,76px);font-weight:900;background:var(--grad-text);-webkit-background-clip:text;background-clip:text;color:transparent;line-height:1.05}
+.live-stat .l{color:var(--muted);font-size:clamp(13px,2vw,20px)}
+.live-grid{display:grid;gap:14px;grid-template-columns:1fr}
+.live-grid .card{margin:0}
+.pairs{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(250px,1fr))}
+.pair{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 12px;font-size:clamp(16px,1.5vw,22px)}
+.pair .arrow{color:var(--gold);font-weight:900}
+.live-feed li{font-size:clamp(16px,1.5vw,22px)}
+.lb-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:clamp(16px,1.5vw,22px)}
+.lb-row:last-child{border-bottom:none}
+.lb-row .c{margin-inline-start:auto;color:var(--gold-hi);font-weight:900}
+.live-flash{position:sticky;top:8px;z-index:5;text-align:center;font-size:clamp(20px,4vw,42px);padding:16px;border-radius:18px;background:var(--grad-gold);color:#111;margin-bottom:14px;animation:pop .5s ease-out;box-shadow:0 10px 30px var(--shadow)}
+@keyframes pop{from{transform:scale(.85);opacity:0}}
+.live-head{display:flex;justify-content:space-between;align-items:center;margin:0 2px 12px}
+body.is-live nav.tabs{display:none}
+body.is-live .wrap{padding-bottom:30px}
+@media(min-width:900px){body.is-live .wrap{max-width:1300px}.live-grid{grid-template-columns:1fr 1fr}.live-pairs{grid-column:1 / -1}}
 .name-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;max-height:52vh;overflow:auto;padding:2px}
 .name-btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:9px 13px;font-size:16.5px;font-weight:500;cursor:pointer;color:var(--text)}
 .name-btn .av{width:26px;height:26px;font-size:12px;border-width:1px}
@@ -622,6 +645,8 @@ const S = {
   modData: null,
   loginId: '',
   loginQ: '',
+  lastFeed: null,
+  flash: null,
   filter: 'all',
   search: '', aSearch: '', mSearch: '',
   loadErr: null
@@ -669,7 +694,12 @@ function numCircle(p, n) {
 async function refresh() {
   if (S.tab === 'admin' && S.adminCode) await refreshAdmin();
   const st = await rpc('tag_state', { p_join_code: joinCode() });
-  if (st.error) { S.loadErr = st.error; } else { S.state = st; S.loadErr = null; }
+  if (st.error) { S.loadErr = st.error; } else {
+    S.state = st; S.loadErr = null;
+    const f = st.feed && st.feed[0]; const key = f ? f.catcher + '|' + f.target + '|' + f.at : '';
+    if (S.lastFeed !== null && key && key !== S.lastFeed) S.flash = { ...f, t: Date.now() };
+    if (st.feed) S.lastFeed = key;
+  }
   if (S.session) {
     const me = await rpc('tag_me', { p_id: S.session.id, p_pin: S.session.pin });
     if (me.error) {
@@ -729,7 +759,8 @@ function render() {
   if (!S.state) html = S.loadErr ? `<section class="card center"><h2>אין חיבור לשרת</h2><p class="muted">${esc(S.loadErr)}</p><button class="btn" data-act="reload">נסה שוב</button></section>` : '<div class="skeleton"></div>';
   else if (S.state.locked && S.tab !== 'admin') html = lockedView();
   else if (S.state.locked) html = adminView();
-  else html = S.tab === 'chain' ? chainView() : S.tab === 'rules' ? rulesView() : S.tab === 'admin' ? adminView() : S.tab === 'mod' ? modView() : meView();
+  else html = S.tab === 'chain' ? chainView() : S.tab === 'rules' ? rulesView() : S.tab === 'admin' ? adminView() : S.tab === 'mod' ? modView() : S.tab === 'live' ? liveView() : meView();
+  document.body.classList.toggle('is-live', S.tab === 'live');
   setHTML($('#view'), html);
   const tabs = [['me', '🎯', 'המשחק שלי'], ['chain', '🔗', 'השרשרת'], ['rules', '📜', 'חוקים']];
   if (isManager() || S.tab === 'mod') tabs.push(['mod', '🛡️', 'ניהול']);
@@ -896,26 +927,65 @@ function chainView() {
         ${p.catches ? `<span class="badge">🏅 ${p.catches}</span>` : ''}</li>`;
     }).join('')}</ul>${!q && S.filter === 'all' && ps.length > 1 ? '<div class="loop">↺ האחרון ברשימה תופס את הראשון</div>' : ''}`
     : `<p class="empty">${ps.length ? 'לא נמצאו ילדים' : 'הרשימה עוד ריקה'}</p>`;
-  return `${podium}${fd}<section class="card"><h3>🔗 השרשרת</h3>
+  return `${podium}${fd}<section class="card"><h3>🔗 השרשרת <a class="live-link" href="#live">📺 מסך חי</a></h3>
     <div class="tools"><input id="c-search" type="search" placeholder="חיפוש שם…" autocomplete="off">
       <div class="chips"><button class="${S.filter === 'all' ? 'on' : ''}" data-act="filter" data-f="all">כולם</button><button class="${S.filter === 'alive' ? 'on' : ''}" data-act="filter" data-f="alive">במשחק</button></div></div>
     ${list}</section>`;
 }
 
+function liveView() {
+  const { players: ps, feed, game: g } = S.state;
+  const byId = Object.fromEntries(ps.map(p => [p.id, p]));
+  const alive = ps.filter(p => p.alive);
+  const top = ps.filter(p => p.catches > 0).sort((a, b) => b.catches - a.catches).slice(0, 5);
+  const pairs = ps.filter(p => p.alive && p.target_id);
+  const flash = S.flash && Date.now() - S.flash.t < 9000 ? S.flash : null;
+  const medals = ['🥇', '🥈', '🥉', '4', '5'];
+  return `<div class="live-head"><h2 class="gold-text" style="margin:0">📺 ${esc(g.title)} · בשידור חי</h2><a class="link" href="#chain">יציאה</a></div>
+    ${flash ? `<div class="live-flash">⚡ <b>${esc(flash.catcher)}</b> תפס/ה את <b>${esc(flash.target)}</b>!</div>` : ''}
+    <div class="live-top">
+      <div class="live-stat"><div class="n">${alive.length}</div><div class="l">עדיין במשחק</div></div>
+      <div class="live-stat"><div class="n">${ps.length - alive.length}</div><div class="l">נתפסו</div></div>
+      <div class="live-stat"><div class="n">${ps.length}</div><div class="l">ברשימה</div></div>
+    </div>
+    ${g.status === 'finished' ? winnerCard() : g.status === 'registration' ? '<section class="card center"><h2>המשחק עוד לא התחיל</h2><p class="muted">ברגע שהמנהל הראשי יתחיל, הכול יופיע כאן</p></section>' : ''}
+    <div class="live-grid">
+      <section class="card"><h3>🏅 מלכי התפיסות</h3>${top.length ? top.map((p, i) => `<div class="lb-row"><span>${medals[i]}</span>${av(p)}<b>${esc(p.name)}</b><span class="c">${p.catches}</span></div>`).join('') : '<p class="empty">עוד אין תפיסות</p>'}</section>
+      <section class="card"><h3>⚡ תפיסות אחרונות</h3>${feed.length ? `<ul class="feed live-feed">${feed.slice(0, 8).map(f => `<li><span><b>${esc(f.catcher)}</b> תפס/ה את <b>${esc(f.target)}</b></span><span class="t">${ago(f.at)}</span></li>`).join('')}</ul>` : '<p class="empty">עוד אין תפיסות</p>'}</section>
+      ${g.status !== 'finished' && pairs.length ? `<section class="card live-pairs"><h3>🎯 מי רודף אחרי מי (${pairs.length})</h3><div class="pairs">
+        ${pairs.map(p => `<div class="pair">${av(p)}<b>${esc(p.name)}</b><span class="arrow">←</span>${av(byId[p.target_id])}<span>${esc(byId[p.target_id]?.name)}</span></div>`).join('')}</div></section>` : ''}
+    </div>`;
+}
+
 function rulesView() {
-  return `<section class="card tie-rule"><div class="ico">🧣</div><div><h2 class="gold-text">חוק העניבה</h2>
+  return `<section class="card center"><h1 class="gold-text">🔥 תופסת שכבגית</h1>
+      <p>המשחק נמשך עד שנשאר אחד אחרון, והוא המנצח! 🏆</p></section>
+    <section class="card"><h3>🎯 איך משחקים</h3><ol class="rules">
+      <li>כל אחד צריך לתפוס את מי שנמצא אחריו ברשימה, ולדאוג שלא ייתפס על ידי מי שלפניו.</li>
+      <li>מי שנתפס נמחק מהרשימה, ומי שתפס אותו ממשיך לתפוס את מי שאחריו.</li>
+      <li>האחרון ברשימה תופס את הראשון.</li>
+      <li>תפסת? מצלמים את התפיסה דרך האתר, ומי שנתפס מאשר. בלי צילום, התפיסה לא נחשבת.</li>
+      <li>הרשימה באתר מתעדכנת לבד אחרי כל תפיסה. כל אחד אחראי להתעדכן מי המטרה שלו.</li>
+    </ol></section>
+    <section class="card"><h3>💡 דוגמה</h3>
+      <p class="gold" style="font-weight:700;font-size:17px">מאור ← רעות ← אור ← אלעד ← גפן</p>
+      <p>אור צריך לתפוס את אלעד ולהיזהר מרעות. אם אור תפס את אלעד, אלעד נמחק מהרשימה, ועכשיו התור של אור לתפוס את גפן.</p>
+      <p>גפן, האחרון ברשימה, תופס את מאור, הראשון.</p></section>
+    <section class="card tie-rule"><div class="ico">🧣</div><div><h2 class="gold-text">חוק העניבה</h2>
       <p>מי שחובש את עניבת הצופים, <b>אי אפשר לתפוס אותו!</b></p></div></section>
-    <section class="card"><h3>📜 חוקי המשחק</h3><ol class="rules">
-      <li>כל אחד תופס את מי שבא אחריו ברשימה. האחרון תופס את הראשון.</li>
-      <li>תפסת? מצלמים את מי שתפסת דרך האתר. התמונה היא ההוכחה, וצריך לראות בה שאין עניבה.</li>
-      <li>מי שנתפס מקבל הודעה באתר ומאשר שנתפס. אחרי האישור הוא יוצא מהמשחק.</li>
-      <li>מי שתפס מקבל את המטרה של מי שנתפס, וממשיך לרדוף.</li>
-      <li>כל השרשרת גלויה לכולם: רואים מי רודף אחרי מי.</li>
-      <li>יש מחלוקת? המדריך רואה את התמונה ומכריע.</li>
-      <li>מי שנשאר אחרון במשחק מנצח! 🏆</li>
+    <section class="card"><h3>📍 איפה מותר לתפוס</h3>
+      <p>בכל מקום, <b>חוץ מהשבט, בית הספר ואירועים שכבגיים</b>.</p>
+      <p>מותר לעקוב אחרי אנשים ברחוב, בעבודה, באוטו וכו׳, הכול כדי לתפוס את מי שאתם צריכים. להיכנס לבית מותר רק באישור של אחד מבני המשפחה.</p></section>
+    <section class="card"><h3>❌ אסור</h3><ol class="rules">
+      <li>להשתמש באלימות או להשחית רכוש. תפיסה עם אלימות נפסלת.</li>
+      <li>לדחוף הורים, בני משפחה או אנשים שלא קשורים למשחק.</li>
+      <li>להתקשר לבני משפחה של מי שאתם תופסים אחרי 23:00 בלילה. לכתוב מותר.</li>
+      <li>לקפוץ למכונית או לריינג׳ר נוסעים. התפיסה לא תיחשב.</li>
+      <li>להיכנס לבית בלי אישור של אחד מבני המשפחה. התפיסה תיפסל.</li>
     </ol></section>
     <section class="card"><h3>🚫 בלי ספאם</h3><p>מי ששולח תמונות לא אמיתיות או מציק, המנהלים יכולים לחסום אותו.</p></section>
-    <section class="card"><h3>🔒 הקוד האישי</h3><p>את הקוד שלך לא מספרים לאף אחד. מי שיודע אותו יכול להיכנס בשמך ולאשר שנתפסת.</p></section>`;
+    <section class="card"><h3>🔒 הקוד האישי</h3><p>את הקוד שלך לא מספרים לאף אחד. מי שיודע אותו יכול להיכנס בשמך ולאשר שנתפסת.</p></section>
+    <p class="center muted">בהצלחה, צוות שכב״ג ❤️‍🔥</p>`;
 }
 
 /* people list shared by the managers tab and the counselor screen */
@@ -987,7 +1057,7 @@ function adminView() {
       ? `<p>המשחק רץ: <b class="gold">${ps.filter(p => p.alive).length}</b> מתוך ${ps.length} עדיין במשחק. ${claimed} נכנסו לאתר.</p>`
       : `${winnerCard()}`;
   return `<div class="hello"><div>👑 <b>מנהל ראשי</b></div><button class="link" data-act="a-logout">יציאה</button></div>
-    <section class="card"><h3>מצב המשחק</h3>${control}</section>
+    <section class="card"><h3>מצב המשחק <a class="live-link" href="#live">📺 מסך חי</a></h3>${control}</section>
     ${pend.length ? `<section class="card"><h3>⏳ תפיסות שמחכות (${pend.length})</h3><p class="muted small">אפשר לאשר גם בלי הנתפס, למשל כשהוא חסום או לא עונה.</p><ul class="alist">${pend.map(c => catchRow(c, false)).join('')}</ul></section>` : ''}
     ${disputed.length ? `<section class="card"><h3>⚖️ מחלוקות</h3><p class="muted small">הנתפס דחה. אפשר לראות את התמונה ולאשר בכל זאת.</p><ul class="alist">${disputed.map(c => catchRow(c, true)).join('')}</ul></section>` : ''}
     <section class="card"><h3>📣 קישור לילדים</h3><div class="share">${esc(link)}</div>
@@ -1397,7 +1467,7 @@ document.addEventListener('change', e => {
 /* ---------------------------------------------------------------- routing + polling */
 function route() {
   const h = (location.hash || '').replace('#', '');
-  S.tab = ['me', 'chain', 'rules', 'admin', 'mod'].includes(h) ? h : 'me';
+  S.tab = ['me', 'chain', 'rules', 'admin', 'mod', 'live'].includes(h) ? h : 'me';
   window.scrollTo(0, 0);
   render();
   if ((S.tab === 'admin' && S.adminCode) || S.tab === 'mod') refresh();
