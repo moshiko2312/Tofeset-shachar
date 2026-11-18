@@ -788,5 +788,21 @@ end $$;
 -- helpers are internal only
 revoke execute on all functions in schema tag_private from public;
 
+-- the site (anon key) may call the game functions, even when new projects do not grant API access by default
+do $$
+declare f record;
+begin
+  for f in select p.oid::regprocedure as sig
+             from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+            where n.nspname = 'public' and p.proname like 'tag\_%'
+  loop
+    execute format('grant execute on function %s to public', f.sig);
+    begin
+      execute format('grant execute on function %s to anon, authenticated', f.sig);
+    exception when undefined_object then null;
+    end;
+  end loop;
+end $$;
+
 -- ask the Supabase API to pick up the new functions right away
 notify pgrst, 'reload schema';
