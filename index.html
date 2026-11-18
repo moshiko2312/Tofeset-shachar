@@ -103,6 +103,12 @@ textarea:focus{border-color:var(--gold)}
 details.pin-box{margin-top:14px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px}
 details.pin-box summary{cursor:pointer;font-weight:700}
 .podium .av{margin:4px auto}
+.name-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;max-height:52vh;overflow:auto;padding:2px}
+.name-btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:9px 13px;font-size:16.5px;font-weight:500;cursor:pointer;color:var(--text)}
+.name-btn .av{width:26px;height:26px;font-size:12px;border-width:1px}
+.name-btn:active{border-color:var(--gold)}
+.picked{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--gold);border-radius:14px;padding:10px 12px;margin-bottom:12px}
+.picked b{font-size:19px;flex:1}
 label{display:block;font-size:14px;color:var(--text2);margin:0 0 12px;font-weight:500}
 input,select{display:block;width:100%;margin-top:6px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:13px 14px;font-size:18px;outline:none;transition:border-color .15s}
 input:focus,select:focus{border-color:var(--gold)}
@@ -589,6 +595,7 @@ const S = {
   adminData: null,
   modData: null,
   loginId: '',
+  loginQ: '',
   filter: 'all',
   search: '', aSearch: '', mSearch: '',
   loadErr: null
@@ -802,18 +809,29 @@ function authView() {
   const sel = S.state.players.find(p => p.id === Number(S.loginId));
   const sub = g.status === 'registration' ? 'בוחרים את השם שלך ונכנסים. המשחק יתחיל בקרוב!'
     : g.status === 'active' ? 'המשחק רץ! בוחרים את השם שלך ונכנסים' : 'המשחק נגמר. אפשר להיכנס ולראות איך הלך';
-  let form = `<form data-form="${sel && !sel.claimed ? 'claim' : 'login'}" autocomplete="off">
-    <label>מי אתה?<select id="l-id"><option value="">בחר את השם שלך</option>${names.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></label>`;
-  if (!sel) form += `<p class="muted small">לא מוצא את השם שלך? פנה למדריך.</p>`;
-  else if (!sel.claimed) form += `<div class="notice ok">👋 פעם ראשונה? בחר קוד אישי בן 4 ספרות. איתו תיכנס מעכשיו.</div>
+  const norm = t => String(t || '').replace(/["'״׳\s]/g, '');
+  const q = norm(S.loginQ);
+  const shown = q ? names.filter(p => norm(p.name).includes(q)) : names;
+  let form;
+  if (!sel) {
+    form = `<label for="l-q">מי אתה?</label>
+      <input id="l-q" type="search" placeholder="🔍 חיפוש השם שלך…" autocomplete="off" enterkeyhint="search">
+      <div class="name-grid">${shown.map(p => `<button type="button" class="name-btn" data-act="pick" data-id="${p.id}">${avSrc(p.id) ? av(p) : ''}${esc(p.name)}</button>`).join('')}</div>
+      ${shown.length ? '' : '<p class="empty">לא מצאתי את השם הזה</p>'}
+      <p class="muted small">לא מוצא את השם שלך? פנה למדריך.</p>`;
+  } else {
+    form = `<form data-form="${sel.claimed ? 'login' : 'claim'}" autocomplete="off">
+      <div class="picked">${av(sel)}<b>${esc(sel.name)}</b><button type="button" class="link" data-act="unpick">זה לא אני</button></div>`;
+    if (!sel.claimed) form += `<div class="notice ok">👋 פעם ראשונה? בחר קוד אישי בן 4 ספרות. איתו תיכנס מעכשיו.</div>
       <div class="row2"><label>קוד אישי חדש<input id="c-pin" class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password"></label>
       <label>שוב את הקוד<input id="c-pin2" class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password"></label></div>
       <p class="muted small">🔒 שומרים את הקוד בסוד. מי שיודע אותו יכול להיכנס בשמך.</p>
       <button class="btn gold xl" type="submit">אני ${esc(sel.name)}, כניסה</button>`;
-  else form += `<label>הקוד האישי שלך<input id="l-pin" class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password"></label>
+    else form += `<label>הקוד האישי שלך<input id="l-pin" class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password"></label>
       <button class="btn gold xl" type="submit">כניסה</button>
       <p class="muted small center">שכחת את הקוד? מנהל או מדריך יכולים לשחרר את השם שלך, ואז בוחרים קוד חדש.</p>`;
-  form += '</form>';
+    form += '</form>';
+  }
   return `<section class="card center"><div class="welcome-logo">${LOGO}</div>
       <h1 class="gold-text">${esc(g.title)}</h1><p class="muted">${sub}</p></section>
     ${g.status === 'finished' ? winnerCard() : ''}
@@ -1185,6 +1203,8 @@ const ACT = {
   },
   person: el => personActions(el.dataset.kind, Number(el.dataset.id)),
   profile: () => profileSheet(),
+  pick: el => { S.loginId = el.dataset.id; render(); setTimeout(() => document.getElementById('c-pin') ? document.getElementById('c-pin').focus() : document.getElementById('l-pin')?.focus(), 50); },
+  unpick: () => { S.loginId = ''; render(); },
   theme: () => { const l = !isLight(); applyTheme(l); store.set('tofeset.theme', l ? 'light' : 'dark'); render(); },
   'a-logout': () => { S.adminCode = null; S.adminData = null; sstore.set('tofeset.admin', null); location.hash = '#me'; },
   'a-start': async el => { if (await ask({ title: 'להתחיל את המשחק?', text: 'כל אחד יתחיל לרדוף אחרי מי שבא אחריו ברשימה.', ok: '▶ מתחילים' })) busy(el, async () => done(await adm('tag_admin_start'), 'המשחק התחיל! 🏃')); },
@@ -1203,11 +1223,11 @@ const ACT = {
 };
 
 function saveSession(r, pin) {
-  S.session = { id: r.id, name: r.name, pin }; store.set('tofeset.session', S.session); S.loginId = '';
+  S.session = { id: r.id, name: r.name, pin }; store.set('tofeset.session', S.session); S.loginId = ''; S.loginQ = '';
 }
 const FORMS = {
   async claim() {
-    const id = Number(val('l-id')), pin = val('c-pin'), pin2 = val('c-pin2');
+    const id = Number(S.loginId), pin = val('c-pin'), pin2 = val('c-pin2');
     if (!/^[0-9]{4}$/.test(pin)) { toast('הקוד צריך להיות 4 ספרות', 'err'); return; }
     if (pin !== pin2) { toast('הקודים לא זהים', 'err'); return; }
     const r = await rpc('tag_claim', { p_id: id, p_pin: pin, p_join_code: joinCode() });
@@ -1215,7 +1235,7 @@ const FORMS = {
     saveSession(r, pin); toast(`ברוך הבא, ${r.name}! 🎉`, 'ok'); await refresh();
   },
   async login() {
-    const id = Number(val('l-id')), pin = val('l-pin');
+    const id = Number(S.loginId), pin = val('l-pin');
     if (!id) { toast('בחר את השם שלך', 'err'); return; }
     const r = await rpc('tag_login', { p_id: id, p_pin: pin });
     if (r.error) { toast(r.error, 'err'); return; }
@@ -1274,6 +1294,7 @@ document.addEventListener('input', e => {
   if (id === 'c-search') { S.search = e.target.value; render(); }
   if (id === 'a-search') { S.aSearch = e.target.value; render(); }
   if (id === 'm-search') { S.mSearch = e.target.value; render(); }
+  if (id === 'l-q') { S.loginQ = e.target.value; render(); }
   if (e.target.classList.contains('pin')) e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4);
 });
 document.addEventListener('change', e => {
