@@ -512,6 +512,24 @@ returns jsonb language sql stable security definer set search_path = '' as $$
                   where p.id = any (p_ids[1:100]) and p.avatar is not null), '{}'::jsonb) end;
 $$;
 
+-- Catch photos gallery: confirmed catches with a photo, newest first, a page at a time.
+create or replace function public.tag_gallery(p_join_code text, p_before_id bigint default null, p_limit int default 8)
+returns jsonb language sql stable security definer set search_path = '' as $$
+  select case when not tag_private.access_ok(p_join_code) then tag_private.err('קוד הגישה לא נכון')
+  else jsonb_build_object('ok', true, 'items', coalesce((
+    select jsonb_agg(x order by (x->>'id')::bigint desc) from (
+      select jsonb_build_object('id', c.id, 'catcher', a.name, 'target', b.name,
+                                'catcher_id', c.catcher_id, 'target_id', c.target_id,
+                                'at', c.resolved_at, 'photo', c.photo) as x
+        from public.tag_catches c
+        join public.tag_players a on a.id = c.catcher_id
+        join public.tag_players b on b.id = c.target_id
+       where c.status = 'confirmed' and c.photo is not null
+         and (p_before_id is null or c.id < p_before_id)
+       order by c.id desc
+       limit least(greatest(coalesce(p_limit, 8), 1), 20)) g), '[]'::jsonb)) end;
+$$;
+
 -- A kid sets or removes their own profile photo (p_avatar null or '' removes it).
 create or replace function public.tag_set_avatar(p_id bigint, p_pin text, p_avatar text)
 returns jsonb language plpgsql security definer set search_path = '' as $$
@@ -657,6 +675,16 @@ begin
   v := tag_private.check_staff(p_name, p_pass);
   if v ? 'error' then return v; end if;
   return tag_private.set_order(p_ids);
+end $$;
+
+create or replace function public.tag_staff_clear_photo(p_name text, p_pass text, p_catch_id bigint)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v jsonb;
+begin
+  v := tag_private.check_staff(p_name, p_pass);
+  if v ? 'error' then return v; end if;
+  update public.tag_catches set photo = null where id = p_catch_id and status <> 'pending';
+  return jsonb_build_object('ok', true);
 end $$;
 
 -- ---------------------------------------------------------- admin (counselor)
@@ -900,6 +928,16 @@ begin
   v_err := tag_private.check_admin(p_code);
   if v_err is not null then return tag_private.err(v_err); end if;
   return tag_private.set_order(p_ids);
+end $$;
+
+create or replace function public.tag_admin_clear_photo(p_code text, p_catch_id bigint)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v_err text;
+begin
+  v_err := tag_private.check_admin(p_code);
+  if v_err is not null then return tag_private.err(v_err); end if;
+  update public.tag_catches set photo = null where id = p_catch_id and status <> 'pending';
+  return jsonb_build_object('ok', true);
 end $$;
 
 create or replace function public.tag_admin_settings(p_code text, p_title text, p_join_code text)

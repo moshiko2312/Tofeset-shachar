@@ -133,6 +133,13 @@ body.is-live .wrap{padding-bottom:30px}
 .list-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
 .list-head h3{margin:0}
 .list-head .btn{width:auto;margin:0;padding:6px 12px;min-height:36px}
+.gallery{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.gitem{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.gitem img{display:block;width:100%;aspect-ratio:3/4;object-fit:cover;cursor:zoom-in;background:#000}
+.gitem .cap{padding:8px 10px;font-size:14px;line-height:1.35}
+.gitem .cap b{color:var(--gold-hi)}
+.gitem .t{color:var(--muted);font-size:12px}
+.gitem .del{position:absolute;top:8px;left:8px;width:34px;height:34px;border-radius:50%;border:none;background:rgba(0,0,0,.65);color:#fff;font-size:16px;cursor:pointer}
 .name-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;max-height:52vh;overflow:auto;padding:2px}
 .name-btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:9px 13px;font-size:16.5px;font-weight:500;cursor:pointer;color:var(--text)}
 .name-btn .av{width:26px;height:26px;font-size:12px;border-width:1px}
@@ -551,6 +558,16 @@ const demo = (() => {
     tag_admin_remove_manager({ p_code, p_manager_id }) { const e = admErr(p_code); if (e) return err(e); db.managers = db.managers.filter(m => m.id !== Number(p_manager_id)); return { ok: true }; },
     tag_admin_set_order({ p_code, p_ids }) { const e = admErr(p_code); if (e) return err(e); return setOrder(p_ids); },
     tag_staff_set_order({ p_name, p_pass, p_ids }) { const m = staff(p_name, p_pass); if (!m) return err(staffErr); return setOrder(p_ids); },
+    tag_gallery({ p_join_code, p_before_id, p_limit }) {
+      if (!accessOk(p_join_code)) return err('קוד הגישה לא נכון');
+      const lim = Math.min(Math.max(Number(p_limit) || 8, 1), 20);
+      const items = db.catches.filter(c => c.status === 'confirmed' && c.photo && (!p_before_id || c.id < Number(p_before_id)))
+        .sort((a, b) => b.id - a.id).slice(0, lim)
+        .map(c => ({ id: c.id, catcher: P(c.catcher_id)?.name, target: P(c.target_id)?.name, catcher_id: c.catcher_id, target_id: c.target_id, at: c.resolved_at, photo: c.photo }));
+      return { ok: true, items };
+    },
+    tag_staff_clear_photo({ p_name, p_pass, p_catch_id }) { const m = staff(p_name, p_pass); if (!m) return err(staffErr); const c = db.catches.find(x => x.id === Number(p_catch_id)); if (c && c.status !== 'pending') c.photo = null; return { ok: true }; },
+    tag_admin_clear_photo({ p_code, p_catch_id }) { const e = admErr(p_code); if (e) return err(e); const c = db.catches.find(x => x.id === Number(p_catch_id)); if (c && c.status !== 'pending') c.photo = null; return { ok: true }; },
     tag_mod_state({ p_id, p_pin }) { const e = modErr(p_id, p_pin); return e ? err(e) : { ok: true, info: info() }; },
     tag_mod_block({ p_id, p_pin, p_player_id, p_on }) {
       const e = modErr(p_id, p_pin); if (e) return err(e);
@@ -661,6 +678,8 @@ const S = {
   loginQ: '',
   lastFeed: null,
   reorder: null,
+  gallery: null,
+  galleryKey: null,
   flash: null,
   filter: 'all',
   search: '', aSearch: '', mSearch: '',
@@ -722,6 +741,7 @@ async function refresh() {
     } else S.me = me;
   }
   if (S.tab === 'mod' && S.staff) await refreshMod();
+  if (S.tab === 'photos' && S.state && !S.state.locked && (!S.gallery || S.galleryKey !== S.lastFeed)) await loadGallery(true);
   await syncAvatars();
   render();
 }
@@ -742,6 +762,14 @@ function genPass() {
   const abc = 'abcdefghjkmnpqrstuvwxyz23456789'; const a = new Uint32Array(6);
   (window.crypto || {}).getRandomValues ? crypto.getRandomValues(a) : a.forEach((_, i) => a[i] = Math.random() * 1e9);
   return [...a].map(n => abc[n % abc.length]).join('');
+}
+async function loadGallery(fresh) {
+  const before = !fresh && S.gallery && S.gallery.items.length ? S.gallery.items[S.gallery.items.length - 1].id : null;
+  const r = await rpc('tag_gallery', { p_join_code: joinCode(), p_before_id: before, p_limit: 8 });
+  if (r.error) return;
+  const items = (r.items || []).filter(x => isImg(x.photo));
+  if (fresh) { S.gallery = { items, done: (r.items || []).length < 8 }; S.galleryKey = S.lastFeed; }
+  else { S.gallery.items.push(...items); S.gallery.done = (r.items || []).length < 8; }
 }
 function logout() { S.session = null; S.me = null; S.modData = null; store.set('tofeset.session', null); }
 
@@ -775,10 +803,10 @@ function render() {
   if (!S.state) html = S.loadErr ? `<section class="card center"><h2>אין חיבור לשרת</h2><p class="muted">${esc(S.loadErr)}</p><button class="btn" data-act="reload">נסה שוב</button></section>` : '<div class="skeleton"></div>';
   else if (S.state.locked && S.tab !== 'admin') html = lockedView();
   else if (S.state.locked) html = adminView();
-  else html = S.tab === 'chain' ? chainView() : S.tab === 'rules' ? rulesView() : S.tab === 'admin' ? adminView() : S.tab === 'mod' ? modView() : S.tab === 'live' ? liveView() : meView();
+  else html = S.tab === 'chain' ? chainView() : S.tab === 'rules' ? rulesView() : S.tab === 'admin' ? adminView() : S.tab === 'mod' ? modView() : S.tab === 'live' ? liveView() : S.tab === 'photos' ? galleryView() : meView();
   document.body.classList.toggle('is-live', S.tab === 'live');
   setHTML($('#view'), html);
-  const tabs = [['me', '🎯', 'המשחק שלי'], ['chain', '🔗', 'השרשרת'], ['rules', '📜', 'חוקים']];
+  const tabs = [['me', '🎯', 'המשחק שלי'], ['chain', '🔗', 'השרשרת'], ['photos', '📸', 'תפיסות'], ['rules', '📜', 'חוקים']];
   if (isManager() || S.tab === 'mod') tabs.push(['mod', '🛡️', 'ניהול']);
   if (S.tab === 'admin') tabs.push(['admin', '👑', 'מנהל ראשי']);
   setHTML($('#tabs'), tabs.map(([k, i, l]) => `<a href="#${k}" class="${S.tab === k ? 'on' : ''}"><span class="i">${i}</span>${l}</a>`).join(''));
@@ -971,6 +999,19 @@ function liveView() {
       ${g.status !== 'finished' && pairs.length ? `<section class="card live-pairs"><h3>🎯 מי רודף אחרי מי (${pairs.length})</h3><div class="pairs">
         ${pairs.map(p => `<div class="pair">${av(p)}<b>${esc(p.name)}</b><span class="arrow">←</span>${av(byId[p.target_id])}<span>${esc(byId[p.target_id]?.name)}</span></div>`).join('')}</div></section>` : ''}
     </div>`;
+}
+
+function galleryView() {
+  const G = S.gallery;
+  if (!G) return '<div class="skeleton"></div>';
+  const canDel = !!(S.staff || S.adminCode);
+  if (!G.items.length) return `<section class="card center"><div class="big-emoji">📸</div><h2>עוד אין תמונות</h2><p class="muted">כאן יופיעו התמונות של כל התפיסות שאושרו.</p></section>`;
+  return `<section class="card"><h3>📸 תמונות התפיסות</h3><p class="muted small">כל תפיסה שאושרה, עם התמונה. לוחצים על תמונה כדי להגדיל.</p>
+    <div class="gallery">${G.items.map(x => `<div class="gitem">
+      <img src="${esc(x.photo)}" alt="${esc(x.catcher)} תפס את ${esc(x.target)}" data-act="zoom" loading="lazy">
+      ${canDel ? `<button class="del" data-act="photo-del" data-id="${x.id}" title="מחיקת התמונה">🗑️</button>` : ''}
+      <div class="cap"><b>${esc(x.catcher)}</b> תפס/ה את <b>${esc(x.target)}</b><div class="t">${ago(x.at)}</div></div></div>`).join('')}</div>
+    ${G.done ? '' : '<button class="btn small" data-act="gallery-more">עוד תמונות</button>'}</section>`;
 }
 
 function rulesView() {
@@ -1397,6 +1438,14 @@ const ACT = {
   person: el => personActions(el.dataset.kind, Number(el.dataset.id)),
   profile: () => profileSheet(),
   'staff-logout': () => { staffLogout(); render(); },
+  'gallery-more': el => busy(el, async () => { await loadGallery(false); render(); }),
+  'photo-del': async el => {
+    if (!(await ask({ title: 'למחוק את התמונה?', text: 'התמונה תימחק מהגלריה. התפיסה עצמה נשארת.', ok: 'מחיקה', danger: true }))) return;
+    const id = Number(el.dataset.id);
+    const r = S.adminCode ? await adm('tag_admin_clear_photo', { p_catch_id: id }) : await mod('tag_staff_clear_photo', { p_catch_id: id });
+    if (r.error) { toast(r.error, 'err'); return; }
+    S.gallery = null; toast('התמונה נמחקה', 'ok'); await refresh();
+  },
   'ro-start': el => { S.reorder = { kind: el.dataset.kind, ids: S.state.players.map(p => p.id) }; render(); },
   'ro-cancel': () => { S.reorder = null; render(); },
   'ro-up': el => { const a = S.reorder.ids, i = a.indexOf(Number(el.dataset.id)); if (i > 0) { [a[i - 1], a[i]] = [a[i], a[i - 1]]; render(); } },
@@ -1536,7 +1585,7 @@ document.addEventListener('change', e => {
 /* ---------------------------------------------------------------- routing + polling */
 function route() {
   const h = (location.hash || '').replace('#', '');
-  S.tab = ['me', 'chain', 'rules', 'admin', 'mod', 'live'].includes(h) ? h : 'me';
+  S.tab = ['me', 'chain', 'rules', 'admin', 'mod', 'live', 'photos'].includes(h) ? h : 'me';
   window.scrollTo(0, 0);
   render();
   if ((S.tab === 'admin' && S.adminCode) || S.tab === 'mod') refresh();
