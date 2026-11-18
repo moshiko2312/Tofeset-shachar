@@ -918,7 +918,7 @@ function targetCard(m) {
   }
   const pending = o && o.status === 'pending';
   return `<section class="card target"><div class="label">🎯 המטרה שלך</div>
-    ${avSrc(t.id) ? `<div class="target-av">${av(t, 'lg')}</div>` : ''}
+    <div class="target-av">${av(t, 'lg')}</div>${avSrc(t.id) ? '' : `<div class="muted small">ל${esc(t.name)} עוד אין תמונת פרופיל</div>`}
     <div class="target-name">${esc(t.name)}</div>${notice}
     ${pending
       ? `<div class="pending"><div class="spinner"></div><div><b>מחכים לאישור של ${esc(t.name)}</b><div class="muted small">שלחת תמונה ${ago(o.created_at)}</div></div></div>
