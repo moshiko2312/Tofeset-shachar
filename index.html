@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="description" content="משחק התופסת של שכב״ג שחר">
+<title>משחק התופסת · שכב״ג שחר</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;900&display=swap" rel="stylesheet">
+<script src="config.js"></script>
+<style>
+:root{
+  --bg:#000;--card:#121212;--card2:#0c0c0c;--line:#262626;
+  --gold:#D4AF37;--gold-hi:#F6DE8D;--gold-lo:#A8832A;
+  --grad-gold:linear-gradient(135deg,#FFEAA6 0%,#E3B94B 45%,#B4861C 100%);
+  --text:#F4F4F4;--muted:#9b9b9b;--ok:#62d494;--warn:#ffb648;--danger:#ff6b6b;
+  --r:18px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+html,body{margin:0;background:#000;color:var(--text);font-family:'Rubik',system-ui,-apple-system,'Segoe UI',Arial,sans-serif;line-height:1.45}
+body{min-height:100vh;background:linear-gradient(180deg,#141414 0%,#050505 320px,#000 100%) #000}
+button,input,select{font:inherit;color:inherit}
+.wrap{max-width:560px;margin:0 auto;padding:calc(12px + env(safe-area-inset-top)) 16px calc(104px + env(safe-area-inset-bottom))}
+
+/* header */
+#hdr{display:flex;align-items:center;gap:12px;padding:6px 2px 16px}
+#hdr .logo{width:56px;height:56px;flex:none;filter:drop-shadow(0 4px 14px rgba(212,175,55,.25))}
+.brand{flex:1;min-width:0}
+.tribe{font-weight:900;font-size:24px;letter-spacing:.3px;background:var(--grad-gold);-webkit-background-clip:text;background-clip:text;color:transparent;line-height:1.1}
+.title{color:var(--muted);font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hdr-side{text-align:left;flex:none}
+.chip{display:inline-block;font-size:12px;font-weight:700;padding:4px 10px;border-radius:99px;border:1px solid #2c2c2c;background:#0b0b0b;white-space:nowrap}
+.chip.reg{color:var(--gold-hi);border-color:rgba(212,175,55,.45)}
+.chip.live{color:var(--ok);border-color:rgba(98,212,148,.45)}
+.chip.live::first-letter{animation:blink 1.4s infinite}
+.chip.end{color:var(--gold-hi);border-color:rgba(212,175,55,.45)}
+.count{font-size:12px;color:var(--muted);margin-top:4px}
+@keyframes blink{50%{opacity:.25}}
+
+.demo-bar{font-size:12.5px;color:var(--gold-hi);border:1px dashed rgba(212,175,55,.45);border-radius:12px;padding:8px 12px;margin-bottom:14px;background:#090909}
+
+/* cards */
+.card{background:linear-gradient(180deg,#151515,#0c0c0c);border:1px solid rgba(212,175,55,.16);border-radius:var(--r);padding:18px;margin-bottom:14px;box-shadow:0 12px 30px rgba(0,0,0,.55)}
+.card h1,.card h2,.card h3{margin:0 0 8px;line-height:1.2}
+.card h1{font-size:28px;font-weight:900}
+.card h2{font-size:21px;font-weight:700}
+.card h3{font-size:16px;font-weight:700;color:var(--gold-hi)}
+.card p{margin:6px 0}
+.center{text-align:center}
+.muted{color:var(--muted)}
+.small{font-size:13.5px}
+.gold{color:var(--gold-hi)}
+.gold-text{background:var(--grad-gold);-webkit-background-clip:text;background-clip:text;color:transparent}
+.big-emoji{font-size:44px;line-height:1;margin-bottom:6px}
+.welcome-logo{width:120px;height:120px;margin:4px auto 10px;filter:drop-shadow(0 8px 28px rgba(212,175,55,.3))}
+
+/* forms */
+label{display:block;font-size:14px;color:#cfcfcf;margin:0 0 12px;font-weight:500}
+input,select{display:block;width:100%;margin-top:6px;background:#070707;border:1px solid #2d2d2d;border-radius:12px;padding:13px 14px;font-size:18px;outline:none;transition:border-color .15s}
+input:focus,select:focus{border-color:var(--gold)}
+input.pin{letter-spacing:10px;text-align:center;font-weight:700;direction:ltr}
+select{appearance:none;-webkit-appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--gold) 50%),linear-gradient(135deg,var(--gold) 50%,transparent 50%);background-position:18px 52%,12px 52%;background-size:6px 6px;background-repeat:no-repeat}
+.row2{display:flex;gap:10px}.row2>*{flex:1}
+
+/* buttons */
+.btn{display:block;width:100%;min-height:50px;border-radius:14px;border:1px solid #333;background:#1a1a1a;color:#fff;font-weight:700;font-size:17px;cursor:pointer;padding:10px 14px;margin-top:10px;transition:transform .08s,opacity .15s}
+.btn:active{transform:scale(.98)}
+.btn:disabled{opacity:.55;pointer-events:none}
+.btn.gold{background:var(--grad-gold);color:#111;border:none;box-shadow:0 8px 22px rgba(212,175,55,.22)}
+.btn.xl{min-height:60px;font-size:20px;font-weight:900}
+.btn.ghost{background:transparent;color:#cfcfcf}
+.btn.small{min-height:40px;font-size:14.5px;font-weight:500}
+.btn.danger{background:#1d0b0b;border-color:#5b2020;color:#ff9a9a}
+.btn-row{display:flex;gap:10px}.btn-row .btn{flex:1}
+.btn-col .btn{margin-top:10px}
+.link{background:none;border:none;color:var(--muted);text-decoration:underline;cursor:pointer;padding:6px;font-size:14px}
+.busy{position:relative;color:transparent!important}
+.busy::after{content:'';position:absolute;inset:0;margin:auto;width:20px;height:20px;border-radius:50%;border:3px solid rgba(0,0,0,.25);border-top-color:#111;animation:spin .7s linear infinite}
+.btn:not(.gold).busy::after{border-color:rgba(255,255,255,.2);border-top-color:#fff}
+
+.seg{display:flex;background:#070707;border:1px solid #262626;border-radius:14px;padding:4px;margin-bottom:16px;gap:4px}
+.seg button{flex:1;border:none;background:none;border-radius:10px;padding:11px 6px;font-weight:700;font-size:15px;color:var(--muted);cursor:pointer}
+.seg button.on{background:var(--grad-gold);color:#111}
+
+/* me */
+.hello{display:flex;justify-content:space-between;align-items:center;margin:0 2px 10px;font-size:18px}
+.target{text-align:center;padding:22px 18px}
+.label{font-size:13px;letter-spacing:.5px;color:var(--gold);font-weight:700}
+.target-name{font-size:42px;font-weight:900;line-height:1.1;margin:8px 0 6px;background:var(--grad-gold);-webkit-background-clip:text;background-clip:text;color:transparent;word-break:break-word}
+.tie-hint{margin-top:12px;font-size:13.5px;color:#cfcfcf;background:#0a0a0a;border:1px solid #262626;border-radius:12px;padding:10px}
+.notice{border-radius:12px;padding:10px 12px;margin:10px 0;font-size:14.5px;text-align:right}
+.notice.warn{background:#1c1406;border:1px solid #5a4416;color:#ffd78a}
+.notice.ok{background:#0a1a10;border:1px solid #1f5a36;color:#9ef0bf}
+.pending{display:flex;align-items:center;gap:12px;text-align:right;background:#0a0a0a;border:1px solid #262626;border-radius:14px;padding:14px;margin-top:12px}
+.spinner{width:26px;height:26px;border-radius:50%;border:3px solid #2a2a2a;border-top-color:var(--gold);animation:spin .9s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+.incoming{border:1.5px solid var(--gold);animation:pulse 1.8s ease-in-out infinite;text-align:center}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(212,175,55,.35)}50%{box-shadow:0 0 0 10px rgba(212,175,55,0)}}
+img.proof{display:block;width:100%;max-height:52vh;object-fit:contain;background:#000;border-radius:14px;border:1px solid #262626;margin:12px 0;cursor:zoom-in}
+.out{text-align:center;border-color:#2a2a2a}
+.stats-row{display:flex;gap:10px;margin-bottom:14px}
+.stat{flex:1;background:#0c0c0c;border:1px solid #222;border-radius:16px;padding:12px 6px;text-align:center}
+.stat .n{font-size:26px;font-weight:900;color:var(--gold-hi);line-height:1.1}
+.stat .l{font-size:12.5px;color:var(--muted)}
+.hunter{font-size:16px}
+.winner{text-align:center;border-color:var(--gold);background:radial-gradient(90% 70% at 50% 0%,#1d1d1d,#0b0b0b)}
+.crown{font-size:56px;line-height:1;animation:float 2.4s ease-in-out infinite}
+@keyframes float{50%{transform:translateY(-6px)}}
+.winner-name{font-size:38px;font-weight:900;background:var(--grad-gold);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+/* chain */
+.tools{display:flex;gap:8px;margin-bottom:12px}
+.tools input{margin:0;padding:10px 12px;font-size:16px}
+.chips{display:flex;gap:6px;flex:none}
+.chips button{border:1px solid #2c2c2c;background:#0a0a0a;border-radius:99px;padding:0 12px;font-size:13.5px;color:var(--muted);cursor:pointer;white-space:nowrap}
+.chips button.on{border-color:var(--gold);color:var(--gold-hi)}
+ul.chain{list-style:none;margin:0;padding:0;position:relative}
+ul.chain::before{content:'';position:absolute;right:21px;top:22px;bottom:22px;width:2px;background:linear-gradient(var(--gold),rgba(212,175,55,.15))}
+.node{display:flex;align-items:center;gap:12px;padding:7px 0;position:relative}
+.num{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:#0b0b0b;border:2px solid var(--gold);font-weight:700;color:var(--gold-hi);flex:none;position:relative;z-index:1;font-size:15px}
+.who{flex:1;min-width:0;background:#0d0d0d;border:1px solid #1f1f1f;border-radius:14px;padding:9px 12px}
+.nm{font-weight:700;font-size:16.5px}
+.sub{font-size:13.5px;color:var(--muted);margin-top:1px}
+.sub b{color:#e9e9e9;font-weight:500}
+.node.out .num{border-color:#2e2e2e;color:#555;background:#080808}
+.node.out .nm{color:#666;text-decoration:line-through}
+.node.out .who{background:#090909;border-color:#161616}
+.node.me .num{background:var(--grad-gold);color:#111;border-color:transparent}
+.node.me .who{border-color:rgba(212,175,55,.55)}
+.you{font-size:12px;color:var(--gold);font-weight:500}
+.badge{font-size:13px;background:#0b0b0b;border:1px solid rgba(212,175,55,.35);color:var(--gold-hi);border-radius:99px;padding:3px 9px;flex:none}
+.loop{font-size:13px;color:var(--muted);text-align:center;margin-top:10px}
+.podium{display:flex;gap:8px;align-items:flex-end}
+.podium>div{flex:1;text-align:center;background:#0b0b0b;border:1px solid #232323;border-radius:14px;padding:10px 4px}
+.podium .p1{border-color:rgba(212,175,55,.6);padding-top:16px}
+.podium .m{font-size:26px}
+.podium .pn{font-weight:700;font-size:14.5px;word-break:break-word}
+.podium .pc{font-size:12.5px;color:var(--muted)}
+ul.feed{list-style:none;margin:0;padding:0}
+ul.feed li{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #1b1b1b;font-size:15px}
+ul.feed li:last-child{border-bottom:none}
+ul.feed .t{color:var(--muted);font-size:12.5px;white-space:nowrap}
+.empty{color:var(--muted);text-align:center;padding:16px 0}
+
+/* rules */
+ol.rules{margin:0;padding:0 22px 0 0}
+ol.rules li{margin:0 0 12px;font-size:16px}
+ol.rules li::marker{color:var(--gold);font-weight:900}
+.tie-rule{display:flex;gap:14px;align-items:center;border-color:var(--gold)}
+.tie-rule .ico{font-size:46px;flex:none}
+
+/* admin */
+.alist{list-style:none;margin:0;padding:0}
+.arow{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #1b1b1b}
+.arow:last-child{border-bottom:none}
+.arow .num{width:34px;height:34px;font-size:13px;border-width:1.5px}
+.arow .who{background:none;border:none;padding:0}
+.acts{display:flex;gap:6px;flex:none}
+.acts button{border:1px solid #2e2e2e;background:#0b0b0b;border-radius:10px;padding:7px 9px;font-size:13px;cursor:pointer;color:#ddd}
+.acts button.danger{color:#ff9a9a;border-color:#4a1d1d}
+.acts button.ok{color:#111;background:var(--grad-gold);border:none;font-weight:700}
+.st{font-size:12px;border-radius:99px;padding:2px 8px;border:1px solid #333;white-space:nowrap}
+.st.pending{color:var(--warn);border-color:#5a4416}
+.st.confirmed{color:var(--ok);border-color:#1f5a36}
+.st.rejected{color:#ff9a9a;border-color:#4a1d1d}
+.st.cancelled{color:#777}
+.share{display:flex;gap:8px;align-items:center;background:#070707;border:1px solid #262626;border-radius:12px;padding:10px 12px;direction:ltr;font-size:13.5px;word-break:break-all;color:#ddd}
+a.btn{text-align:center;text-decoration:none;line-height:30px}
+details.card summary{cursor:pointer;font-weight:700;color:var(--gold-hi);list-style:none}
+details.card summary::-webkit-details-marker{display:none}
+details.card summary::after{content:' ▾';color:var(--muted)}
+details[open].card summary{margin-bottom:12px}
+
+/* tabs */
+nav.tabs{position:fixed;bottom:0;left:0;right:0;z-index:20;background:rgba(0,0,0,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-top:1px solid rgba(212,175,55,.22);padding:6px 8px calc(6px + env(safe-area-inset-bottom))}
+nav.tabs .in{max-width:560px;margin:0 auto;display:flex}
+nav.tabs a{flex:1;text-align:center;text-decoration:none;color:#8a8a8a;font-size:12.5px;font-weight:500;padding:6px 0 4px;border-radius:12px}
+nav.tabs a .i{display:block;font-size:22px;line-height:1.2;filter:grayscale(1) brightness(1.4);opacity:.7}
+nav.tabs a.on{color:var(--gold-hi)}
+nav.tabs a.on .i{filter:none;opacity:1}
+.foot{text-align:center;margin-top:18px}
+
+/* modal + toast */
+#modal-root .backdrop{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.78);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;animation:fade .15s}
+#modal-root .sheet{width:100%;max-width:560px;background:linear-gradient(180deg,#171717,#0d0d0d);border-top:1px solid rgba(212,175,55,.4);border-radius:22px 22px 0 0;padding:20px 18px calc(20px + env(safe-area-inset-bottom));max-height:94vh;overflow:auto;animation:up .2s ease-out}
+#modal-root h3{margin:0 0 8px;font-size:20px}
+#modal-root img.zoom{width:100%;border-radius:14px;display:block}
+@keyframes up{from{transform:translateY(40px);opacity:.4}}
+@keyframes fade{from{opacity:0}}
+#toast{position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(20px);opacity:0;z-index:60;background:#1b1b1b;border:1px solid #333;color:#fff;padding:12px 16px;border-radius:14px;font-size:15px;max-width:calc(100% - 32px);width:max-content;transition:.25s;pointer-events:none;box-shadow:0 10px 30px rgba(0,0,0,.6)}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.err{border-color:#5b2020;color:#ffb3b3}
+#toast.ok{border-color:rgba(212,175,55,.6);color:var(--gold-hi)}
+.skeleton{height:160px;border-radius:var(--r);background:linear-gradient(90deg,#0d0d0d,#171717,#0d0d0d);background-size:200% 100%;animation:sk 1.2s infinite}
+@keyframes sk{to{background-position:-200% 0}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header id="hdr"></header>
+  <div id="demo"></div>
+  <main id="view"><div class="skeleton"></div></main>
+</div>
+<nav class="tabs"><div class="in" id="tabs"></div></nav>
+<input type="file" id="cam" accept="image/*" capture="environment" hidden>
+<div id="modal-root"></div>
+<div id="toast"></div>
+
+<script>
+(() => {
+'use strict';
+
+/* ---------------------------------------------------------------- logo */
+const LOGO = `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="שכב״ג שחר" width="100%" height="100%">
+<defs>
+ <linearGradient id="lgG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFEAA6"/><stop offset=".55" stop-color="#E3B94B"/><stop offset="1" stop-color="#B4861C"/></linearGradient>
+ <linearGradient id="lgR" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFEAA6"/><stop offset=".45" stop-color="#C9971C"/><stop offset="1" stop-color="#FFE29A"/></linearGradient>
+ <radialGradient id="lgS" cx="60" cy="72" r="46" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#F6D57A" stop-opacity=".55"/><stop offset=".55" stop-color="#E3B94B" stop-opacity=".12"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
+ <clipPath id="lgC"><circle cx="60" cy="60" r="50"/></clipPath>
+</defs>
+<circle cx="60" cy="60" r="56.5" fill="#000" stroke="url(#lgR)" stroke-width="3"/>
+<circle cx="60" cy="60" r="50.5" fill="none" stroke="url(#lgR)" stroke-width="1" opacity=".55"/>
+<g clip-path="url(#lgC)">
+ <circle cx="60" cy="72" r="46" fill="url(#lgS)"/>
+ <path d="M86.6 67.3L99.4 65.1M83.4 58.5L90.3 54.5M77.4 51.3L85.7 41.4M69.2 46.6L72 39.1M60 45L60 32M50.8 46.6L48 39.1M42.6 51.3L34.3 41.4M36.6 58.5L29.7 54.5M33.4 67.3L20.6 65.1" stroke="url(#lgG)" stroke-width="3.2" stroke-linecap="round" fill="none"/>
+ <path d="M38 72A22 22 0 0 1 82 72Z" fill="url(#lgG)"/>
+ <rect x="0" y="72" width="120" height="48" fill="#000"/>
+ <path d="M16 72H104" stroke="url(#lgG)" stroke-width="2.6" stroke-linecap="round"/>
+ <path d="M37 80H83" stroke="url(#lgG)" stroke-width="2.3" stroke-linecap="round" opacity=".8"/>
+ <path d="M46 87.5H74" stroke="url(#lgG)" stroke-width="2.1" stroke-linecap="round" opacity=".55"/>
+ <path d="M54 95H66" stroke="url(#lgG)" stroke-width="2" stroke-linecap="round" opacity=".35"/>
+</g>
+<path d="M88 24l1.7 4.6 4.6 1.7-4.6 1.7L88 36.6l-1.7-4.6-4.6-1.7 4.6-1.7z" fill="#FFEAA6"/>
+</svg>`;
+
+/* ---------------------------------------------------------------- utils */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const store = {
+  get(k, d = null) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+};
+const sstore = {
+  get(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch (e) {} }
+};
+function ago(iso) {
+  if (!iso) return '';
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 50) return 'עכשיו';
+  if (s < 3600) return `לפני ${Math.round(s / 60)} דק׳`;
+  if (s < 86400) return `לפני ${Math.round(s / 3600)} שע׳`;
+  const d = new Date(iso);
+  return d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' }) + ' ' + d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+}
+const isImg = s => typeof s === 'string' && s.startsWith('data:image/');
+let toastT;
+function toast(msg, type = '') {
+  const t = $('#toast'); t.textContent = msg; t.className = 'show ' + type;
+  clearTimeout(toastT); toastT = setTimeout(() => t.className = '', 3200);
+}
+
+/* ---------------------------------------------------------------- backend */
+const CFG = window.TOFESET_CONFIG || {};
+const LIVE = !!(CFG.supabaseUrl && CFG.supabaseKey);
+
+async function rpc(fn, args = {}) {
+  if (!LIVE) { await sleep(90); return demo.call(fn, args); }
+  const headers = { 'Content-Type': 'application/json', apikey: CFG.supabaseKey };
+  if (/^eyJ/.test(CFG.supabaseKey)) headers.Authorization = 'Bearer ' + CFG.supabaseKey;
+  try {
+    const r = await fetch(CFG.supabaseUrl.replace(/\/+$/, '') + '/rest/v1/rpc/' + fn,
+      { method: 'POST', headers, body: JSON.stringify(args) });
+    const j = await r.json().catch(() => null);
+    if (!r.ok) return { error: (j && (j.message || j.hint)) || ('שגיאת שרת ' + r.status) };
+    return j || {};
+  } catch (e) {
+    return { error: 'אין חיבור לאינטרנט. נסה שוב', network: true };
+  }
+}
+
+/* Demo mode: the same game rules as the database, kept in this browser only. */
+const demo = (() => {
+  const KEY = 'tofeset.demo.v1';
+  let db = null;
+  const fresh = () => ({ game: { status: 'registration', title: 'משחק התופסת', join_code: '', admin: '1234', started_at: null, finished_at: null, winner_id: null }, players: [], catches: [], seq: { p: 0, c: 0 } });
+  const load = () => { if (!db) { db = store.get(KEY) || fresh(); } return db; };
+  const save = () => {
+    try { localStorage.setItem(KEY, JSON.stringify(db)); }
+    catch (e) { db.catches.forEach(c => { if (c.status !== 'pending') c.photo = null; }); try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e2) {} }
+  };
+  const now = () => new Date().toISOString();
+  const err = m => ({ error: m });
+  const P = id => db.players.find(p => p.id === Number(id));
+  const norm = s => String(s || '').replace(/\s+/g, ' ').trim();
+  const alive = () => db.players.filter(p => p.alive).sort((a, b) => a.position - b.position);
+  const targetOf = id => { const me = P(id); const al = alive().filter(p => p.id !== me.id); if (!al.length) return null; return (al.find(p => p.position > me.position) || al[0]).id; };
+  const pinErr = (id, pin) => { const p = P(id); if (!p) return 'השחקן לא נמצא'; return p.pin === String(pin) ? null : 'קוד שגוי'; };
+  const admErr = c => c === db.game.admin ? null : 'קוד מדריך שגוי';
+  const checkFinish = () => {
+    const al = alive(); const g = db.game;
+    if (al.length === 1 && g.status === 'active') Object.assign(g, { status: 'finished', finished_at: now(), winner_id: al[0].id });
+    else if (al.length > 1 && g.status === 'finished') Object.assign(g, { status: 'active', finished_at: null, winner_id: null });
+  };
+  const apply = (cid, by) => {
+    const c = db.catches.find(x => x.id === Number(cid));
+    if (!c || c.status !== 'pending') return err('הבקשה הזאת כבר טופלה');
+    const a = P(c.catcher_id), b = P(c.target_id);
+    if (!a.alive || !b.alive || targetOf(a.id) !== b.id) { Object.assign(c, { status: 'cancelled', resolved_by: 'system', resolved_at: now() }); return err('השרשרת השתנתה בינתיים, הבקשה בוטלה'); }
+    Object.assign(b, { alive: false, caught_by: a.id, caught_at: now() });
+    Object.assign(c, { status: 'confirmed', resolved_by: by, resolved_at: now() });
+    db.catches.forEach(x => { if (x.status === 'pending' && (x.catcher_id === b.id || x.target_id === b.id)) Object.assign(x, { status: 'cancelled', resolved_by: 'system', resolved_at: now() }); });
+    checkFinish();
+    return { ok: true };
+  };
+  const addPlayer = (name, pin) => {
+    name = norm(name);
+    if (name.length < 2 || name.length > 30) return err('השם צריך להיות בין 2 ל-30 תווים');
+    if (!/^[0-9]{4}$/.test(String(pin || ''))) return err('הקוד האישי צריך להיות 4 ספרות');
+    if (db.players.some(p => p.name.toLowerCase() === name.toLowerCase())) return err('השם הזה כבר רשום. אם זה אתה, היכנס עם הקוד שלך');
+    const id = ++db.seq.p;
+    db.players.push({ id, name, pin: String(pin), position: Math.max(0, ...db.players.map(p => p.position)) + 1, alive: true, caught_by: null, caught_at: null });
+    return { ok: true, id, name };
+  };
+  const F = {
+    tag_state() {
+      const al = alive(); const tmap = {};
+      al.forEach((p, i) => { const t = al[(i + 1) % al.length]; tmap[p.id] = t.id === p.id ? null : t.id; });
+      const cnt = id => db.catches.filter(c => c.catcher_id === id && c.status === 'confirmed').length;
+      const g = db.game;
+      return {
+        game: { status: g.status, title: g.title, needs_code: !!(g.join_code || '').trim(), started_at: g.started_at, finished_at: g.finished_at, winner_id: g.winner_id },
+        players: [...db.players].sort((a, b) => a.position - b.position).map(p => ({ id: p.id, name: p.name, alive: p.alive, target_id: p.alive ? tmap[p.id] ?? null : null, caught_by: p.caught_by, caught_at: p.caught_at, catches: cnt(p.id) })),
+        feed: db.catches.filter(c => c.status === 'confirmed').sort((a, b) => b.resolved_at.localeCompare(a.resolved_at)).slice(0, 40).map(c => ({ catcher: P(c.catcher_id)?.name, target: P(c.target_id)?.name, at: c.resolved_at })),
+        server_time: now()
+      };
+    },
+    tag_register({ p_name, p_pin, p_join_code }) {
+      if (db.game.status !== 'registration') return err('ההרשמה סגורה כי המשחק כבר התחיל. פנה למדריך');
+      if ((db.game.join_code || '').trim() && (p_join_code || '').trim() !== db.game.join_code.trim()) return err('קוד ההצטרפות לא נכון. בקש מהמדריך את הקישור');
+      return addPlayer(p_name, p_pin);
+    },
+    tag_login({ p_id, p_pin }) { const e = pinErr(p_id, p_pin); return e ? err(e) : { ok: true, id: Number(p_id), name: P(p_id).name }; },
+    tag_me({ p_id, p_pin }) {
+      const e = pinErr(p_id, p_pin); if (e) return err(e);
+      const me = P(p_id); const t = me.alive ? targetOf(me.id) : null;
+      const out = db.catches.filter(c => c.catcher_id === me.id && c.target_id === t && ['pending', 'rejected'].includes(c.status)).sort((a, b) => b.id - a.id)[0];
+      const inc = db.catches.filter(c => c.target_id === me.id && c.status === 'pending').sort((a, b) => b.id - a.id)[0];
+      return {
+        ok: true,
+        me: { id: me.id, name: me.name, alive: me.alive, caught_at: me.caught_at, caught_by: P(me.caught_by)?.name || null, catches: db.catches.filter(c => c.catcher_id === me.id && c.status === 'confirmed').length },
+        target: t ? { id: t, name: P(t).name } : null,
+        outgoing: out ? { id: out.id, status: out.status, reason: out.reject_reason, resolved_by: out.resolved_by, created_at: out.created_at } : null,
+        incoming: inc ? { id: inc.id, catcher: P(inc.catcher_id).name, photo: inc.photo, created_at: inc.created_at } : null
+      };
+    },
+    tag_submit_catch({ p_id, p_pin, p_photo }) {
+      const e = pinErr(p_id, p_pin); if (e) return err(e);
+      if (db.game.status !== 'active') return err('המשחק לא פעיל כרגע');
+      const me = P(p_id); if (!me.alive) return err('נתפסת, אז אתה כבר לא במשחק');
+      const t = targetOf(me.id); if (!t) return err('אין לך את מי לתפוס');
+      if (!isImg(p_photo)) return err('התמונה לא תקינה או גדולה מדי');
+      if (db.catches.some(c => c.catcher_id === me.id && c.status === 'pending')) return err('כבר שלחת תפיסה שמחכה לאישור');
+      db.catches.push({ id: ++db.seq.c, catcher_id: me.id, target_id: t, photo: p_photo, status: 'pending', reject_reason: null, resolved_by: null, created_at: now(), resolved_at: null });
+      return { ok: true };
+    },
+    tag_cancel_catch({ p_id, p_pin }) {
+      const e = pinErr(p_id, p_pin); if (e) return err(e);
+      db.catches.forEach(c => { if (c.catcher_id === Number(p_id) && c.status === 'pending') Object.assign(c, { status: 'cancelled', resolved_by: 'catcher', resolved_at: now(), photo: null }); });
+      return { ok: true };
+    },
+    tag_respond({ p_id, p_pin, p_catch_id, p_confirm, p_reason }) {
+      const e = pinErr(p_id, p_pin); if (e) return err(e);
+      const c = db.catches.find(x => x.id === Number(p_catch_id));
+      if (!c || c.target_id !== Number(p_id)) return err('הבקשה לא נמצאה');
+      if (c.status !== 'pending') return err('הבקשה הזאת כבר טופלה');
+      if (p_confirm) return apply(c.id, 'target');
+      Object.assign(c, { status: 'rejected', resolved_by: 'target', resolved_at: now(), reject_reason: ['tie', 'no'].includes(p_reason) ? p_reason : 'no' });
+      return { ok: true };
+    },
+    tag_admin_state({ p_code }) {
+      const e = admErr(p_code); if (e) return err(e);
+      return { ok: true, join_code: db.game.join_code || null, locked: [],
+        catches: [...db.catches].sort((a, b) => b.id - a.id).map(c => ({ id: c.id, catcher_id: c.catcher_id, target_id: c.target_id, catcher: P(c.catcher_id)?.name, target: P(c.target_id)?.name, status: c.status, reason: c.reject_reason, resolved_by: c.resolved_by, created_at: c.created_at, resolved_at: c.resolved_at, has_photo: !!c.photo })) };
+    },
+    tag_admin_photo({ p_code, p_catch_id }) { const e = admErr(p_code); if (e) return err(e); return { ok: true, photo: db.catches.find(c => c.id === Number(p_catch_id))?.photo || null }; },
+    tag_admin_resolve({ p_code, p_catch_id, p_confirm }) {
+      const e = admErr(p_code); if (e) return err(e);
+      const c = db.catches.find(x => x.id === Number(p_catch_id)); if (!c) return err('הבקשה לא נמצאה');
+      if (p_confirm) {
+        if (c.status === 'rejected' && !db.catches.some(x => x.catcher_id === c.catcher_id && x.status === 'pending')) Object.assign(c, { status: 'pending', resolved_by: null, resolved_at: null });
+        return apply(c.id, 'admin');
+      }
+      if (c.status === 'pending') Object.assign(c, { status: 'rejected', resolved_by: 'admin', resolved_at: now() });
+      return { ok: true };
+    },
+    tag_admin_start({ p_code }) {
+      const e = admErr(p_code); if (e) return err(e);
+      if (alive().length < 2) return err('צריך לפחות 2 שחקנים כדי להתחיל');
+      if (db.game.status === 'registration') Object.assign(db.game, { status: 'active', started_at: now(), finished_at: null, winner_id: null });
+      return { ok: true };
+    },
+    tag_admin_add_player({ p_code, p_name, p_pin }) { const e = admErr(p_code); if (e) return err(e); const r = addPlayer(p_name, p_pin); checkFinish(); return r; },
+    tag_admin_remove_player({ p_code, p_player_id }) {
+      const e = admErr(p_code); if (e) return err(e);
+      const id = Number(p_player_id);
+      if (db.game.winner_id === id) db.game.winner_id = null;
+      db.players = db.players.filter(p => p.id !== id);
+      db.players.forEach(p => { if (p.caught_by === id) p.caught_by = null; });
+      db.catches = db.catches.filter(c => c.catcher_id !== id && c.target_id !== id);
+      checkFinish(); return { ok: true };
+    },
+    tag_admin_revive({ p_code, p_player_id }) {
+      const e = admErr(p_code); if (e) return err(e);
+      const id = Number(p_player_id);
+      db.catches.forEach(c => { if (c.target_id === id && c.status === 'confirmed') Object.assign(c, { status: 'rejected', resolved_by: 'admin', resolved_at: now() }); });
+      const p = P(id); if (p) Object.assign(p, { alive: true, caught_by: null, caught_at: null });
+      checkFinish(); return { ok: true };
+    },
+    tag_admin_reset_pin({ p_code, p_player_id, p_pin }) {
+      const e = admErr(p_code); if (e) return err(e);
+      if (!/^[0-9]{4}$/.test(String(p_pin || ''))) return err('הקוד האישי צריך להיות 4 ספרות');
+      const p = P(p_player_id); if (p) p.pin = String(p_pin); return { ok: true };
+    },
+    tag_admin_settings({ p_code, p_title, p_join_code }) {
+      const e = admErr(p_code); if (e) return err(e);
+      if (norm(p_title)) db.game.title = norm(p_title);
+      db.game.join_code = norm(p_join_code); return { ok: true };
+    },
+    tag_admin_set_code({ p_code, p_new_code }) {
+      const e = admErr(p_code); if (e) return err(e);
+      if (String(p_new_code || '').length < 4) return err('קוד המדריך צריך להיות לפחות 4 תווים');
+      db.game.admin = String(p_new_code); return { ok: true };
+    },
+    tag_admin_reset({ p_code, p_keep_players }) {
+      const e = admErr(p_code); if (e) return err(e);
+      db.catches = [];
+      if (p_keep_players) db.players.forEach(p => Object.assign(p, { alive: true, caught_by: null, caught_at: null }));
+      else db.players = [];
+      Object.assign(db.game, { status: 'registration', started_at: null, finished_at: null, winner_id: null });
+      return { ok: true };
+    },
+    tag_admin_clear_photos({ p_code }) {
+      const e = admErr(p_code); if (e) return err(e);
+      let n = 0; db.catches.forEach(c => { if (c.status !== 'pending' && c.photo) { c.photo = null; n++; } });
+      return { ok: true, cleared: n };
+    },
+    tag_demo_seed({ p_code }) {
+      const e = admErr(p_code); if (e) return err(e);
+      ['נועם', 'מאיה', 'איתי', 'שירה', 'יונתן', 'תמר', 'עומר', 'נועה', 'אורי', 'ליה', 'רועי', 'הילה']
+        .forEach(n => addPlayer(n, '0000'));
+      checkFinish(); return { ok: true };
+    }
+  };
+  return {
+    call(fn, args) {
+      load();
+      if (!F[fn]) return err('פעולה לא מוכרת');
+      const r = F[fn](args || {}); save();
+      return JSON.parse(JSON.stringify(r));
+    }
+  };
+})();
+
+/* ---------------------------------------------------------------- state */
+const S = {
+  tab: 'me',
+  state: null,
+  me: null,
+  session: store.get('tofeset.session'),
+  adminCode: sstore.get('tofeset.admin'),
+  adminData: null,
+  authMode: 'register',
+  filter: 'all',
+  search: '',
+  loadErr: null
+};
+{
+  const q = new URLSearchParams(location.search).get('join');
+  if (q) store.set('tofeset.join', q);
+}
+
+async function refresh() {
+  const st = await rpc('tag_state');
+  if (st.error) { S.loadErr = st.error; } else { S.state = st; S.loadErr = null; }
+  if (S.session) {
+    const me = await rpc('tag_me', { p_id: S.session.id, p_pin: S.session.pin });
+    if (me.error) {
+      if (!me.network && /קוד שגוי|לא נמצא/.test(me.error)) { logout(); toast('צריך להיכנס מחדש', 'err'); }
+    } else S.me = me;
+  }
+  if (S.tab === 'admin' && S.adminCode) await refreshAdmin();
+  render();
+}
+async function refreshAdmin() {
+  const a = await rpc('tag_admin_state', { p_code: S.adminCode });
+  if (a.error) { if (!a.network) { S.adminCode = null; sstore.set('tofeset.admin', null); toast(a.error, 'err'); } }
+  else S.adminData = a;
+}
+function logout() { S.session = null; S.me = null; store.set('tofeset.session', null); }
+
+/* ---------------------------------------------------------------- rendering */
+function setHTML(el, html) {
+  if (el._html === html) return;
+  const saved = {};
+  el.querySelectorAll('input[id],select[id]').forEach(i => { if (i.type !== 'file') saved[i.id] = i.value; });
+  const opened = [...el.querySelectorAll('details[id]')].filter(d => d.open).map(d => d.id);
+  const a = document.activeElement; let fid = null, s1, s2;
+  if (a && a.id && el.contains(a)) { fid = a.id; try { s1 = a.selectionStart; s2 = a.selectionEnd; } catch (e) {} }
+  el.innerHTML = html; el._html = html;
+  for (const id in saved) { const i = document.getElementById(id); if (i && el.contains(i)) i.value = saved[id]; }
+  opened.forEach(id => { const d = document.getElementById(id); if (d) d.open = true; });
+  if (fid) { const f = document.getElementById(fid); if (f) { f.focus({ preventScroll: true }); try { f.setSelectionRange(s1, s2); } catch (e) {} } }
+}
+
+function render() {
+  renderHeader();
+  setHTML($('#demo'), LIVE ? '' : `<div class="demo-bar">✨ מצב הדגמה: הנתונים נשמרים רק במכשיר הזה. קוד מדריך: <b>1234</b>, ילדי דוגמה עם קוד <b>0000</b></div>`);
+  let html;
+  if (!S.state) html = S.loadErr ? `<section class="card center"><h2>אין חיבור לשרת</h2><p class="muted">${esc(S.loadErr)}</p><button class="btn" data-act="reload">נסה שוב</button></section>` : '<div class="skeleton"></div>';
+  else html = S.tab === 'chain' ? chainView() : S.tab === 'rules' ? rulesView() : S.tab === 'admin' ? adminView() : meView();
+  setHTML($('#view'), html);
+  const tabs = [['me', '🎯', 'המשחק שלי'], ['chain', '🔗', 'השרשרת'], ['rules', '📜', 'חוקים']];
+  if (S.tab === 'admin') tabs.push(['admin', '🛡️', 'מדריך']);
+  setHTML($('#tabs'), tabs.map(([k, i, l]) => `<a href="#${k}" class="${S.tab === k ? 'on' : ''}"><span class="i">${i}</span>${l}</a>`).join(''));
+}
+
+function renderHeader() {
+  const g = S.state?.game; const ps = S.state?.players || [];
+  const al = ps.filter(p => p.alive).length;
+  const chip = !g ? '' : g.status === 'registration' ? '<span class="chip reg">● הרשמה פתוחה</span>'
+    : g.status === 'active' ? '<span class="chip live">● המשחק פעיל</span>' : '<span class="chip end">🏆 המשחק נגמר</span>';
+  const cnt = !g ? '' : g.status === 'registration' ? `${ps.length} נרשמו` : `${al} מתוך ${ps.length} במשחק`;
+  setHTML($('#hdr'), `<div class="logo">${LOGO}</div>
+    <div class="brand"><div class="tribe">שכב״ג שחר</div><div class="title">${esc(g?.title || 'משחק התופסת')}</div></div>
+    <div class="hdr-side">${chip}<div class="count">${cnt}</div></div>`);
+}
+
+function winnerCard() {
+  const { game: g, players: ps } = S.state;
+  const w = ps.find(p => p.id === g.winner_id);
+  if (!w) return '';
+  const isMe = S.session && S.session.id === w.id;
+  return `<section class="card winner"><div class="crown">🏆</div><div class="label">${isMe ? 'ניצחת!!!' : 'המנצח/ת'}</div>
+    <div class="winner-name">${esc(w.name)}</div><p class="muted">${w.catches} תפיסות במשחק</p></section>`;
+}
+
+function meView() {
+  const g = S.state.game, ps = S.state.players;
+  if (!S.session) return authView();
+  const m = S.me;
+  if (!m) return '<div class="skeleton"></div>';
+  const me = m.me;
+  const idx = ps.findIndex(p => p.id === me.id);
+  const hunter = ps.find(p => p.alive && p.target_id === me.id);
+  let h = `<div class="hello"><div>היי, <b>${esc(me.name)}</b> 👋</div><button class="link" data-act="logout">יציאה</button></div>`;
+  if (m.incoming) h += incomingCard(m.incoming);
+  if (g.status === 'finished') h += winnerCard();
+  if (g.status === 'registration') {
+    h += `<section class="card center"><div class="big-emoji">✅</div><h2>אתה רשום למשחק!</h2>
+      <p>אתה מספר <b class="gold">${idx + 1}</b> ברשימה. המשחק יתחיל כשהמדריך יפתח אותו.</p>
+      ${m.target ? `<p class="muted small">לפי הרשימה עכשיו, תצטרך לתפוס את <b class="gold">${esc(m.target.name)}</b>. זה עוד יכול להשתנות אם יירשמו עוד ילדים.</p>` : ''}</section>`;
+  } else if (me.alive && g.status === 'active') {
+    h += targetCard(m);
+  } else if (!me.alive) {
+    h += `<section class="card out"><div class="big-emoji">😅</div><h2>נתפסת!</h2>
+      <p><b class="gold">${esc(me.caught_by || 'מישהו')}</b> תפס/ה אותך ${ago(me.caught_at)}.</p>
+      <p class="muted small">אתה כבר לא במשחק, אבל אפשר להמשיך לעקוב בשרשרת 🔗</p></section>`;
+  }
+  h += `<section class="stats-row">
+    <div class="stat"><div class="n">${me.catches}</div><div class="l">תפסת</div></div>
+    <div class="stat"><div class="n">${idx + 1}</div><div class="l">מספר ברשימה</div></div>
+    <div class="stat"><div class="n">${ps.filter(p => p.alive).length}</div><div class="l">נשארו במשחק</div></div></section>`;
+  if (me.alive && hunter && g.status === 'active')
+    h += `<section class="card hunter">👀 מי רודף אחריך? <b class="gold">${esc(hunter.name)}</b>
+      <div class="muted small">עם עניבת צופים 🧣 אי אפשר לתפוס אותך</div></section>`;
+  return h;
+}
+
+function targetCard(m) {
+  const t = m.target;
+  if (!t) return `<section class="card center"><h2>אין לך את מי לתפוס</h2></section>`;
+  const o = m.outgoing;
+  let notice = '';
+  if (o && o.status === 'rejected') {
+    const why = o.resolved_by === 'admin' ? 'המדריך דחה את התפיסה האחרונה.'
+      : o.reason === 'tie' ? `התפיסה נדחתה: לפי ${esc(t.name)} הייתה עניבת צופים 🧣`
+      : `התפיסה נדחתה: לפי ${esc(t.name)} לא הייתה תפיסה.`;
+    notice = `<div class="notice warn">${why} אפשר לנסות שוב. במחלוקת, המדריך מכריע.</div>`;
+  }
+  const pending = o && o.status === 'pending';
+  return `<section class="card target"><div class="label">🎯 המטרה שלך</div>
+    <div class="target-name">${esc(t.name)}</div>${notice}
+    ${pending
+      ? `<div class="pending"><div class="spinner"></div><div><b>מחכים לאישור של ${esc(t.name)}</b><div class="muted small">שלחת תמונה ${ago(o.created_at)}</div></div></div>
+         <button class="btn ghost small" data-act="cancel-catch">ביטול ושליחת תמונה אחרת</button>`
+      : `<button class="btn gold xl" data-act="catch">📸 תפסתי! צלם הוכחה</button>
+         <div class="tie-hint">🧣 את מי שחובש עניבת צופים אי אפשר לתפוס. בתמונה צריך לראות שאין עניבה</div>`}
+  </section>`;
+}
+
+function incomingCard(i) {
+  return `<section class="card incoming"><div class="label">📸 תפיסה חדשה!</div>
+    <h2><b class="gold">${esc(i.catcher)}</b> אומר/ת שתפס/ה אותך</h2>
+    ${isImg(i.photo) ? `<img class="proof" src="${esc(i.photo)}" data-act="zoom" alt="תמונת ההוכחה">` : ''}
+    <p class="muted small">אם היית עם עניבת צופים, אי אפשר לתפוס אותך 🧣</p>
+    <div class="btn-col">
+      <button class="btn gold" data-act="respond" data-id="${i.id}" data-v="yes">כן, נתפסתי</button>
+      <button class="btn" data-act="respond" data-id="${i.id}" data-v="tie">🧣 הייתי עם עניבה</button>
+      <button class="btn ghost" data-act="respond" data-id="${i.id}" data-v="no">לא תפסו אותי</button>
+    </div></section>`;
+}
+
+function authView() {
+  const g = S.state.game;
+  const regOpen = g.status === 'registration';
+  const mode = regOpen ? S.authMode : 'login';
+  const names = [...S.state.players].sort((a, b) => a.name.localeCompare(b.name, 'he'));
+  const needCode = g.needs_code && !store.get('tofeset.join');
+  const sub = regOpen ? 'נרשמים, מקבלים מטרה, ותופסים!' : g.status === 'active' ? 'המשחק כבר רץ! נכנסים עם השם והקוד האישי' : 'המשחק נגמר. אפשר להיכנס ולראות איך הלך';
+  const reg = `<form data-form="register" autocomplete="off">
+      <label>השם שלך<input id="r-name" maxlength="30" placeholder="שם ושם משפחה" autocomplete="off"></label>
+      <div class="row2">
+        <label>קוד אישי (4 ספרות)<input id="r-pin" class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password"></label>
+        <label>שוב את הקוד<input id="r-pin2" class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password"></label>
+      </div>
+      ${needCode ? `<label>קוד הצטרפות מהמדריך<input id="r-join" autocomplete="off"></label>` : ''}
+      <p class="muted small">🔒 את הקוד שומרים בסוד. איתו נכנסים לאתר ומאשרים תפיסות.</p>
+      <button class="btn gold xl" type="submit">הצטרפות למשחק</button></form>`;
+  const login = names.length ? `<form data-form="login">
+      <label>מי אתה?<select id="l-id"><option value="">בחר את השם שלך</option>${names.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></label>
+      <label>הקוד האישי שלך<input id="l-pin" class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password"></label>
+      <button class="btn gold xl" type="submit">כניסה</button>
+      <p class="muted small center">שכחת את הקוד? המדריך יכול לאפס אותו.</p></form>`
+    : `<p class="empty">עוד אף אחד לא נרשם</p>`;
+  return `<section class="card center"><div class="welcome-logo">${LOGO}</div>
+      <h1 class="gold-text">${esc(g.title)}</h1><p class="muted">${sub}</p></section>
+    ${g.status === 'finished' ? winnerCard() : ''}
+    <section class="card">
+      ${regOpen ? `<div class="seg"><button class="${mode === 'register' ? 'on' : ''}" data-act="mode" data-mode="register">פעם ראשונה? הרשמה</button><button class="${mode === 'login' ? 'on' : ''}" data-act="mode" data-mode="login">כבר נרשמתי</button></div>` : ''}
+      ${mode === 'register' ? reg : login}
+    </section>
+    <div class="foot"><a class="link" href="#admin">כניסת מדריכים</a></div>`;
+}
+
+function chainView() {
+  const { players: ps, feed, game: g } = S.state;
+  const meId = S.session?.id;
+  const byId = Object.fromEntries(ps.map(p => [p.id, p]));
+  const q = S.search.trim();
+  const rows = ps.map((p, i) => ({ ...p, n: i + 1 }))
+    .filter(p => (S.filter === 'all' || p.alive) && (!q || p.name.includes(q)));
+  const top = ps.filter(p => p.catches > 0).sort((a, b) => b.catches - a.catches).slice(0, 3);
+  const medals = ['🥇', '🥈', '🥉'];
+  const podium = top.length ? `<section class="card"><h3>🏅 מלכי התפיסות</h3><div class="podium">
+      ${[1, 0, 2].filter(i => top[i]).map(i => `<div class="${i === 0 ? 'p1' : ''}"><div class="m">${medals[i]}</div><div class="pn">${esc(top[i].name)}</div><div class="pc">${top[i].catches} תפיסות</div></div>`).join('')}
+    </div></section>` : '';
+  const fd = feed.length ? `<section class="card"><h3>⚡ מה קרה לאחרונה</h3><ul class="feed">
+      ${feed.slice(0, 6).map(f => `<li><span><b>${esc(f.catcher)}</b> תפס/ה את <b>${esc(f.target)}</b></span><span class="t">${ago(f.at)}</span></li>`).join('')}</ul></section>` : '';
+  const list = rows.length ? `<ul class="chain">${rows.map(p => {
+      const sub = p.alive
+        ? (p.target_id ? `🎯 תופס/ת את <b>${esc(byId[p.target_id]?.name)}</b>` : (g.status === 'finished' ? '🏆 ניצח/ה!' : ''))
+        : `נתפס/ה ע״י ${esc(byId[p.caught_by]?.name || '—')}`;
+      return `<li class="node ${p.alive ? 'alive' : 'out'} ${p.id === meId ? 'me' : ''}"><span class="num">${p.n}</span>
+        <div class="who"><div class="nm">${esc(p.name)}${p.id === meId ? ' <span class="you">(אני)</span>' : ''}</div><div class="sub">${sub}</div></div>
+        ${p.catches ? `<span class="badge">🏅 ${p.catches}</span>` : ''}</li>`;
+    }).join('')}</ul>${!q && S.filter === 'all' && ps.length > 1 ? '<div class="loop">↺ האחרון ברשימה תופס את הראשון</div>' : ''}`
+    : `<p class="empty">${ps.length ? 'לא נמצאו ילדים' : 'עוד אף אחד לא נרשם'}</p>`;
+  return `${podium}${fd}<section class="card"><h3>🔗 השרשרת ${g.status === 'registration' ? '(לפי סדר ההרשמה)' : ''}</h3>
+    <div class="tools"><input id="c-search" type="search" placeholder="חיפוש שם…" autocomplete="off">
+      <div class="chips"><button class="${S.filter === 'all' ? 'on' : ''}" data-act="filter" data-f="all">כולם</button><button class="${S.filter === 'alive' ? 'on' : ''}" data-act="filter" data-f="alive">במשחק</button></div></div>
+    ${list}</section>`;
+}
+
+function rulesView() {
+  return `<section class="card tie-rule"><div class="ico">🧣</div><div><h2 class="gold-text">חוק העניבה</h2>
+      <p>מי שחובש את עניבת הצופים, <b>אי אפשר לתפוס אותו!</b></p></div></section>
+    <section class="card"><h3>📜 חוקי המשחק</h3><ol class="rules">
+      <li>כל אחד תופס את מי שבא אחריו ברשימה (לפי סדר ההרשמה). האחרון תופס את הראשון.</li>
+      <li>תפסת? מצלמים את מי שתפסת דרך האתר. התמונה היא ההוכחה, וצריך לראות בה שאין עניבה.</li>
+      <li>מי שנתפס מקבל הודעה באתר ומאשר שנתפס. אחרי האישור הוא יוצא מהמשחק.</li>
+      <li>מי שתפס מקבל את המטרה של מי שנתפס, וממשיך לרדוף.</li>
+      <li>כל השרשרת גלויה לכולם: רואים מי רודף אחרי מי.</li>
+      <li>יש מחלוקת? המדריך רואה את התמונה ומכריע.</li>
+      <li>מי שנשאר אחרון במשחק מנצח! 🏆</li>
+    </ol></section>
+    <section class="card"><h3>🔒 הקוד האישי</h3><p>את הקוד שלך לא מספרים לאף אחד. מי שיודע אותו יכול להיכנס בשמך ולאשר שנתפסת.</p></section>`;
+}
+
+function adminView() {
+  if (!S.adminCode) return `<section class="card"><h2>🛡️ כניסת מדריכים</h2>
+      <form data-form="admin-login"><label>קוד מדריך<input id="a-code" type="password" autocomplete="current-password"></label>
+      <button class="btn gold xl" type="submit">כניסה</button></form>
+      ${LIVE ? '' : '<p class="muted small">במצב הדגמה הקוד הוא 1234</p>'}</section>`;
+  const A = S.adminData;
+  if (!A) return '<div class="skeleton"></div>';
+  const { game: g, players: ps } = S.state;
+  const byId = Object.fromEntries(ps.map(p => [p.id, p]));
+  const pend = A.catches.filter(c => c.status === 'pending');
+  const disputed = A.catches.filter(c => c.status === 'rejected' && c.resolved_by === 'target' && byId[c.target_id]?.alive && byId[c.catcher_id]?.alive).slice(0, 15);
+  const base = location.origin + location.pathname;
+  const link = base + (A.join_code ? '?join=' + encodeURIComponent(A.join_code) : '');
+  const wa = 'https://wa.me/?text=' + encodeURIComponent(`🏃 משחק התופסת של שכב״ג שחר!\nנרשמים כאן:\n${link}`);
+  const reasonTxt = c => c.reason === 'tie' ? '🧣 טוען/ת שהייתה עניבה' : 'טוען/ת שלא נתפס/ה';
+  const catchRow = (c, disp) => `<li class="arow"><div class="who"><div class="nm">${esc(c.catcher)} ← ${esc(c.target)}</div>
+      <div class="sub">${disp ? reasonTxt(c) : 'מחכה לאישור של ' + esc(c.target)} · ${ago(c.created_at)}</div></div>
+      <div class="acts">${c.has_photo ? `<button data-act="a-photo" data-id="${c.id}">📷</button>` : ''}
+      <button class="ok" data-act="a-resolve" data-id="${c.id}" data-v="1">אשר</button>
+      ${disp ? '' : `<button class="danger" data-act="a-resolve" data-id="${c.id}" data-v="0">דחה</button>`}</div></li>`;
+  const stLabel = { pending: 'ממתין', confirmed: 'אושר', rejected: 'נדחה', cancelled: 'בוטל' };
+  const control = g.status === 'registration'
+    ? `<p>${ps.length} ילדים נרשמו. כשכולם בפנים, מתחילים. הסדר נשאר לפי סדר ההרשמה.</p><button class="btn gold xl" data-act="a-start">▶ התחלת המשחק</button>`
+    : g.status === 'active'
+      ? `<p>המשחק רץ: <b class="gold">${ps.filter(p => p.alive).length}</b> מתוך ${ps.length} עדיין במשחק.</p>`
+      : `${winnerCard()}`;
+  return `<div class="hello"><div>🛡️ <b>מצב מדריך</b></div><button class="link" data-act="a-logout">יציאה</button></div>
+    <section class="card"><h3>מצב המשחק</h3>${control}</section>
+    ${pend.length ? `<section class="card"><h3>⏳ תפיסות שמחכות (${pend.length})</h3><ul class="alist">${pend.map(c => catchRow(c, false)).join('')}</ul></section>` : ''}
+    ${disputed.length ? `<section class="card"><h3>⚖️ מחלוקות</h3><p class="muted small">הנתפס דחה. אפשר לראות את התמונה ולאשר בכל זאת.</p><ul class="alist">${disputed.map(c => catchRow(c, true)).join('')}</ul></section>` : ''}
+    <section class="card"><h3>📣 קישור לילדים</h3><div class="share">${esc(link)}</div>
+      <div class="btn-row"><button class="btn small" data-act="a-copy" data-link="${esc(link)}">העתקה</button><a class="btn small gold" href="${esc(wa)}" target="_blank" rel="noopener">שליחה בוואטסאפ</a></div></section>
+    <section class="card"><h3>👥 ילדים (${ps.length})</h3>
+      <form data-form="a-add" autocomplete="off"><div class="row2"><label>שם<input id="a-name" maxlength="30" autocomplete="off"></label><label>קוד (4 ספרות)<input id="a-pin" class="pin" inputmode="numeric" maxlength="4" autocomplete="off"></label></div>
+      <button class="btn small" type="submit">➕ הוספת ילד לסוף הרשימה</button></form>
+      <ul class="alist" style="margin-top:10px">${ps.map((p, i) => `<li class="arow"><span class="num">${i + 1}</span>
+        <div class="who"><div class="nm">${esc(p.name)}</div><div class="sub">${p.alive ? (g.status === 'registration' ? 'רשום' : 'במשחק') : 'נתפס/ה ע״י ' + esc(byId[p.caught_by]?.name || '—')}${(A.locked || []).includes(p.id) ? ' · 🔒 ננעל' : ''}</div></div>
+        <div class="acts">${p.alive ? '' : `<button data-act="a-revive" data-id="${p.id}">החזר</button>`}<button data-act="a-pin" data-id="${p.id}">קוד</button><button class="danger" data-act="a-remove" data-id="${p.id}">מחק</button></div></li>`).join('')}</ul>
+      ${!LIVE && !ps.length ? '<button class="btn small" data-act="a-seed">טעינת 12 ילדים לדוגמה</button>' : ''}</section>
+    <details class="card" id="d-hist"><summary>📋 כל התפיסות (${A.catches.length})</summary><ul class="alist">
+      ${A.catches.map(c => `<li class="arow"><div class="who"><div class="nm">${esc(c.catcher)} ← ${esc(c.target)}</div><div class="sub">${ago(c.created_at)}${c.reason ? ' · ' + reasonTxt(c) : ''}</div></div>
+        <span class="st ${c.status}">${stLabel[c.status]}</span>${c.has_photo ? `<div class="acts"><button data-act="a-photo" data-id="${c.id}">📷</button></div>` : ''}</li>`).join('') || '<p class="empty">אין עדיין תפיסות</p>'}
+    </ul></details>
+    <details class="card" id="d-set"><summary>⚙️ הגדרות</summary>
+      <form data-form="a-settings"><label>שם המשחק<input id="s-title" value="${esc(g.title)}" maxlength="40"></label>
+      <label>קוד הצטרפות (לא חובה)<input id="s-join" value="${esc(A.join_code || '')}" maxlength="20" autocomplete="off"></label>
+      <p class="muted small">כשיש קוד, רק מי שקיבל את הקישור (או את הקוד) יכול להירשם.</p>
+      <button class="btn small" type="submit">שמירה</button></form>
+      <form data-form="a-code" style="margin-top:16px"><label>קוד מדריך חדש<input id="s-newcode" type="password" autocomplete="new-password"></label>
+      <button class="btn small" type="submit">החלפת קוד מדריך</button></form></details>
+    <details class="card" id="d-reset"><summary>🧹 ניקוי ואיפוס</summary>
+      <button class="btn small" data-act="a-clear-photos">מחיקת כל התמונות של תפיסות שטופלו</button>
+      <button class="btn small" data-act="a-reset" data-keep="1">סבב חדש עם אותם ילדים</button>
+      <button class="btn small danger" data-act="a-reset" data-keep="0">איפוס מלא: מחיקת כל הרשימה</button></details>`;
+}
+
+/* ---------------------------------------------------------------- modals */
+function openModal(html) {
+  const root = $('#modal-root');
+  root.innerHTML = `<div class="backdrop"><div class="sheet" role="dialog" aria-modal="true">${html}</div></div>`;
+  return root.querySelector('.sheet');
+}
+function closeModal() { $('#modal-root').innerHTML = ''; }
+function ask({ title, text = '', ok = 'אישור', cancel = 'ביטול', danger = false, input = null }) {
+  return new Promise(res => {
+    const sheet = openModal(`<h3>${title}</h3>${text ? `<p class="muted">${text}</p>` : ''}
+      ${input ? `<input id="m-input" ${input}>` : ''}
+      <div class="btn-row"><button class="btn ${danger ? 'danger' : 'gold'}" data-m="ok">${ok}</button><button class="btn ghost" data-m="cancel">${cancel}</button></div>`);
+    const bd = sheet.parentElement;
+    bd.addEventListener('click', e => {
+      const b = e.target.closest('[data-m]');
+      if (e.target === bd) { closeModal(); res(null); return; }
+      if (!b) return;
+      const v = input ? sheet.querySelector('#m-input').value : true;
+      closeModal(); res(b.dataset.m === 'ok' ? v : null);
+    });
+    if (input) setTimeout(() => sheet.querySelector('#m-input')?.focus(), 60);
+  });
+}
+function showPhoto(src) {
+  if (!isImg(src)) { toast('אין תמונה', 'err'); return; }
+  const sheet = openModal(`<img class="zoom" src="${esc(src)}" alt="תמונת הוכחה"><button class="btn" data-m="x">סגירה</button>`);
+  sheet.parentElement.addEventListener('click', () => closeModal());
+}
+
+/* ---------------------------------------------------------------- camera */
+function compressImage(file, max, q) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file); const img = new Image();
+    img.onload = () => {
+      const s = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * s); c.height = Math.round(img.naturalHeight * s);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg', q));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('bad image')); };
+    img.src = url;
+  });
+}
+$('#cam').addEventListener('change', async e => {
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  let data;
+  try { data = await compressImage(f, LIVE ? 1000 : 640, LIVE ? 0.72 : 0.6); }
+  catch (err) { toast('לא הצלחתי לקרוא את התמונה', 'err'); return; }
+  const t = S.me?.target?.name || '';
+  const sheet = openModal(`<h3>📸 זו ההוכחה?</h3><img class="proof" src="${data}" alt="">
+    <p class="muted small">צריך לראות בתמונה את ${esc(t)}, ושאין עניבת צופים 🧣</p>
+    <div class="btn-row"><button class="btn gold" data-m="send">שליחה ל${esc(t)} לאישור</button><button class="btn ghost" data-m="again">צילום מחדש</button></div>`);
+  sheet.parentElement.addEventListener('click', async ev => {
+    const b = ev.target.closest('[data-m]');
+    if (ev.target === sheet.parentElement) { closeModal(); return; }
+    if (!b) return;
+    if (b.dataset.m === 'again') { closeModal(); $('#cam').value = ''; $('#cam').click(); return; }
+    b.classList.add('busy'); b.disabled = true;
+    const r = await rpc('tag_submit_catch', { p_id: S.session.id, p_pin: S.session.pin, p_photo: data });
+    closeModal();
+    if (r.error) toast(r.error, 'err'); else toast(`נשלח! מחכים ש${t} יאשר`, 'ok');
+    refresh();
+  });
+});
+
+/* ---------------------------------------------------------------- actions */
+async function busy(btn, fn) {
+  if (btn) { btn.classList.add('busy'); btn.disabled = true; }
+  try { return await fn(); } finally { if (btn && btn.isConnected) { btn.classList.remove('busy'); btn.disabled = false; } }
+}
+const val = id => (document.getElementById(id)?.value || '').trim();
+const adm = (fn, args = {}) => rpc(fn, { p_code: S.adminCode, ...args });
+async function done(r, okMsg) {
+  if (r.error) { toast(r.error, 'err'); return false; }
+  if (okMsg) toast(okMsg, 'ok');
+  await refresh(); return true;
+}
+
+const ACT = {
+  reload: () => refresh(),
+  mode: el => { S.authMode = el.dataset.mode; render(); },
+  filter: el => { S.filter = el.dataset.f; render(); },
+  logout: async () => { if (await ask({ title: 'לצאת מהחשבון?', text: 'כדי להיכנס שוב תצטרך את הקוד האישי.', ok: 'יציאה' })) { logout(); render(); } },
+  catch: () => { const c = $('#cam'); c.value = ''; c.click(); },
+  'cancel-catch': (el) => busy(el, async () => done(await rpc('tag_cancel_catch', { p_id: S.session.id, p_pin: S.session.pin }), 'הבקשה בוטלה')),
+  zoom: el => showPhoto(el.getAttribute('src')),
+  respond: async el => {
+    const v = el.dataset.v, id = Number(el.dataset.id);
+    if (v === 'yes' && !(await ask({ title: 'בטוח שנתפסת?', text: 'אחרי האישור אתה יוצא מהמשחק.', ok: 'כן, נתפסתי' }))) return;
+    await busy(el, async () => {
+      const r = await rpc('tag_respond', { p_id: S.session.id, p_pin: S.session.pin, p_catch_id: id, p_confirm: v === 'yes', p_reason: v === 'yes' ? null : v });
+      await done(r, v === 'yes' ? 'כל הכבוד על משחק הוגן 👏' : 'התפיסה נדחתה');
+    });
+  },
+  'a-logout': () => { S.adminCode = null; S.adminData = null; sstore.set('tofeset.admin', null); location.hash = '#me'; },
+  'a-start': async el => { if (await ask({ title: 'להתחיל את המשחק?', text: 'אחרי ההתחלה ההרשמה נסגרת (אפשר עדיין להוסיף ילדים ידנית).', ok: '▶ מתחילים' })) busy(el, async () => done(await adm('tag_admin_start'), 'המשחק התחיל! 🏃')); },
+  'a-photo': async el => { const r = await adm('tag_admin_photo', { p_catch_id: Number(el.dataset.id) }); if (r.error) toast(r.error, 'err'); else showPhoto(r.photo); },
+  'a-resolve': el => busy(el, async () => done(await adm('tag_admin_resolve', { p_catch_id: Number(el.dataset.id), p_confirm: el.dataset.v === '1' }), el.dataset.v === '1' ? 'התפיסה אושרה' : 'התפיסה נדחתה')),
+  'a-revive': async el => { const p = S.state.players.find(x => x.id === Number(el.dataset.id)); if (await ask({ title: `להחזיר את ${esc(p?.name)} למשחק?`, text: 'התפיסה שלו/ה מבוטלת והשרשרת מתעדכנת.', ok: 'החזרה' })) done(await adm('tag_admin_revive', { p_player_id: p.id }), 'הוחזר/ה למשחק'); },
+  'a-remove': async el => { const p = S.state.players.find(x => x.id === Number(el.dataset.id)); if (await ask({ title: `למחוק את ${esc(p?.name)}?`, text: 'הילד/ה יוצא/ת מהרשימה לגמרי.', ok: 'מחיקה', danger: true })) done(await adm('tag_admin_remove_player', { p_player_id: p.id }), 'נמחק/ה'); },
+  'a-pin': async el => {
+    const p = S.state.players.find(x => x.id === Number(el.dataset.id));
+    const pin = await ask({ title: `קוד חדש ל${esc(p?.name)}`, text: '4 ספרות. תמסור/י לילד/ה את הקוד החדש.', ok: 'שמירה', input: 'class="pin" inputmode="numeric" maxlength="4" autocomplete="off"' });
+    if (pin != null) done(await adm('tag_admin_reset_pin', { p_player_id: p.id, p_pin: pin.trim() }), 'הקוד עודכן');
+  },
+  'a-copy': async el => { try { await navigator.clipboard.writeText(el.dataset.link); toast('הקישור הועתק', 'ok'); } catch (e) { toast('לא הצלחתי להעתיק. סמנו את הקישור והעתיקו ידנית', 'err'); } },
+  'a-clear-photos': async el => { if (await ask({ title: 'למחוק את כל התמונות?', text: 'נמחקות התמונות של תפיסות שכבר טופלו. התוצאות נשארות.', ok: 'מחיקה', danger: true })) { const r = await adm('tag_admin_clear_photos'); done(r, r.error ? '' : `נמחקו ${r.cleared} תמונות`); } },
+  'a-reset': async el => {
+    const keep = el.dataset.keep === '1';
+    const ans = await ask(keep
+      ? { title: 'סבב חדש?', text: 'כל הילדים חוזרים למשחק, התפיסות נמחקות, וחוזרים לשלב ההרשמה.', ok: 'סבב חדש' }
+      : { title: 'איפוס מלא?', text: 'כל הרשימה, התפיסות והתמונות יימחקו. כדי לאשר, כתבו: מחק', ok: 'מחיקת הכול', danger: true, input: 'autocomplete="off"' });
+    if (ans == null || (!keep && ans.trim() !== 'מחק')) { if (ans != null) toast('לא בוצע. צריך לכתוב: מחק', 'err'); return; }
+    done(await adm('tag_admin_reset', { p_keep_players: keep }), keep ? 'סבב חדש מוכן' : 'הכול אופס');
+  },
+  'a-seed': el => busy(el, async () => done(await adm('tag_demo_seed'), 'נטענו ילדי דוגמה (קוד 0000)'))
+};
+
+const FORMS = {
+  async register(f, btn) {
+    const name = val('r-name'), pin = val('r-pin'), pin2 = val('r-pin2');
+    if (pin !== pin2) { toast('הקודים לא זהים', 'err'); return; }
+    const join = val('r-join') || store.get('tofeset.join') || '';
+    const r = await rpc('tag_register', { p_name: name, p_pin: pin, p_join_code: join });
+    if (r.error) { toast(r.error, 'err'); return; }
+    if (val('r-join')) store.set('tofeset.join', val('r-join'));
+    S.session = { id: r.id, name: r.name, pin }; store.set('tofeset.session', S.session);
+    toast(`ברוך הבא, ${r.name}! 🎉`, 'ok'); await refresh();
+  },
+  async login() {
+    const id = Number(val('l-id')), pin = val('l-pin');
+    if (!id) { toast('בחר את השם שלך', 'err'); return; }
+    const r = await rpc('tag_login', { p_id: id, p_pin: pin });
+    if (r.error) { toast(r.error, 'err'); return; }
+    S.session = { id: r.id, name: r.name, pin }; store.set('tofeset.session', S.session);
+    await refresh();
+  },
+  async 'admin-login'() {
+    const code = val('a-code');
+    const r = await rpc('tag_admin_state', { p_code: code });
+    if (r.error) { toast(r.error, 'err'); return; }
+    S.adminCode = code; S.adminData = r; sstore.set('tofeset.admin', code); render();
+  },
+  async 'a-add'() {
+    const ok = await done(await adm('tag_admin_add_player', { p_name: val('a-name'), p_pin: val('a-pin') }), 'נוסף/ה לרשימה');
+    if (ok) { ['a-name', 'a-pin'].forEach(id => { const i = document.getElementById(id); if (i) i.value = ''; }); }
+  },
+  async 'a-settings'() { await done(await adm('tag_admin_settings', { p_title: val('s-title'), p_join_code: val('s-join') }), 'נשמר'); },
+  async 'a-code'() {
+    const nc = val('s-newcode');
+    const r = await adm('tag_admin_set_code', { p_new_code: nc });
+    if (r.error) { toast(r.error, 'err'); return; }
+    S.adminCode = nc; sstore.set('tofeset.admin', nc); document.getElementById('s-newcode').value = ''; toast('קוד המדריך הוחלף', 'ok');
+  }
+};
+
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]');
+  if (!el || el.closest('#modal-root')) return;
+  e.preventDefault();
+  ACT[el.dataset.act]?.(el, e);
+});
+document.addEventListener('submit', e => {
+  const f = e.target.closest('[data-form]'); if (!f) return;
+  e.preventDefault();
+  const btn = f.querySelector('button[type=submit]');
+  busy(btn, () => FORMS[f.dataset.form]?.(f, btn));
+});
+document.addEventListener('input', e => {
+  if (e.target.id === 'c-search') { S.search = e.target.value; render(); }
+  if (e.target.classList.contains('pin')) e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4);
+});
+
+/* ---------------------------------------------------------------- routing + polling */
+function route() {
+  const h = (location.hash || '').replace('#', '');
+  S.tab = ['me', 'chain', 'rules', 'admin'].includes(h) ? h : 'me';
+  window.scrollTo(0, 0);
+  render();
+  if (S.tab === 'admin' && S.adminCode) refreshAdmin().then(render);
+}
+window.addEventListener('hashchange', route);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh(); });
+setInterval(() => { if (document.visibilityState === 'visible' && !$('#modal-root').innerHTML) refresh(); }, LIVE ? 7000 : 2500);
+route();
+refresh();
+})();
+</script>
+</body>
+</html>
